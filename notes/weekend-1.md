@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: MIT. Copyright (c) 2026 The CEOAI contributors. -->
+<!-- SPDX-License-Identifier: MIT. Copyright (c) 2026 The remit contributors. -->
 # Weekend 1: evidence model and ledger
 
 ## What was built
@@ -7,8 +7,8 @@
 - `evidence/admission.py`: the admission hierarchy (present, complete, sufficient, admissible, gate_eligible). Each stage records why evidence stopped there. Class-specific strength fields are declared in one table (`CLASS_FIELDS`), and `block_rate` is derived for containment tests.
 - `evidence/ledger.py`: SQLite ledger with add, get, query by subject and class, expire and revoke, plus an append-only `ledger_events` table. Expiry can only be brought forward, never extended. Revocation needs a reason and happens once.
 - `evidence/requirements.py` and `requirements.json`: a draft of the evidence each capability level needs. Loading enforces the standing rules: a containment requirement accepts only `containment_test`, and every world-acting capability has a containment requirement at limited and full.
-- `evidence/support.py`: the reasoning behind `evidence explain`. For each level it lists the evidence that met each requirement, why each candidate failed, and what evidence would change the outcome.
-- `cli.py`: `evidence add | list | show | expire | revoke | explain`.
+- `evidence/support.py`: the reasoning behind `remit evidence explain`. For each level it lists the evidence that met each requirement, why each candidate failed, and what evidence would change the outcome.
+- `cli.py`: `remit evidence add | list | show | expire | revoke | explain`.
 - `demo.py`: `make demo` / `uv run demo`, on a synthetic coding agent.
 - 133 pytest tests, including edges: expiry is exclusive at the instant of expiry, revocation takes effect from its timestamp, monitors time out exactly after their heartbeat window, and expiring already expired evidence is refused rather than extending it.
 

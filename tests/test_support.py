@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 
 from datetime import timedelta
 
 import pytest
 
-from ceoai.evidence.model import WORLD_ACTING_CAPABILITIES, Capability, EvidenceClass, Level, Subject
-from ceoai.evidence.requirements import load_rules
-from ceoai.evidence.support import explain_capability, rejection_reasons, render
+from remit.evidence.model import WORLD_ACTING_CAPABILITIES, Capability, EvidenceClass, Level, Subject
+from remit.evidence.requirements import load_rules
+from remit.evidence.support import explain_capability, rejection_reasons, render
 
 from .conftest import AGENT, NOW, make_evidence
 

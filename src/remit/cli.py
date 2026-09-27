@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
-"""The ``evidence`` command line tool."""
+# Copyright (c) 2026 The remit contributors
+"""The ``remit`` command line tool. Weekend 1 provides ``remit evidence``."""
 
 from __future__ import annotations
 
@@ -36,13 +36,15 @@ class CliError(Exception):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="evidence", description="Record assurance evidence and explain what it supports."
+    root = argparse.ArgumentParser(prog="remit", description="Evidence-gated authority for AI agents.")
+    groups = root.add_subparsers(dest="group", required=True)
+    parser = groups.add_parser(
+        "evidence", help="record assurance evidence and explain what it supports"
     )
     parser.add_argument(
         "--db",
-        default=os.environ.get("CEOAI_LEDGER", "evidence.db"),
-        help="ledger file (default: $CEOAI_LEDGER or ./evidence.db)",
+        default=os.environ.get("REMIT_LEDGER", "evidence.db"),
+        help="ledger file (default: $REMIT_LEDGER or ./evidence.db)",
     )
     parser.add_argument("--rules", help="requirements file (default: the bundled draft)")
     parser.add_argument("--now", help="evaluate as if it were this ISO 8601 time")
@@ -95,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("capability", choices=[c.value for c in Capability] + ["all"])
     ex.add_argument("--agent", required=True)
     ex.add_argument("--version", required=True)
-    return parser
+    return root
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -107,7 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return handler(args, ledger, now)
     except (CliError, LedgerError, RuleError, ValueError, KeyError, OSError) as exc:
         message = exc.args[0] if isinstance(exc, KeyError) and exc.args else exc
-        print(f"evidence: {message}", file=sys.stderr)
+        print(f"remit evidence: {message}", file=sys.stderr)
         return 1
 
 

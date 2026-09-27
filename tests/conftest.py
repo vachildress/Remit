@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 """Shared fixtures. All data is synthetic."""
 
 from __future__ import annotations
@@ -8,8 +8,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ceoai.evidence.ledger import Ledger
-from ceoai.evidence.model import Capability, Evidence, EvidenceClass, Source, Subject, hash_artefact
+from remit.evidence.ledger import Ledger
+from remit.evidence.model import Capability, Evidence, EvidenceClass, Source, Subject, hash_artefact
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 AGENT = Subject("test-agent", "1.0.0")

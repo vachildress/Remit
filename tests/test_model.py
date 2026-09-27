@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ceoai.evidence.model import (
+from remit.evidence.model import (
     AdmissionState,
     Capability,
     Evidence,

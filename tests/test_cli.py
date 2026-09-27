@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 
 import json
 from datetime import timedelta
 
 import pytest
 
-from ceoai.cli import main
-from ceoai.evidence.model import Capability
+from remit.cli import main
+from remit.evidence.model import Capability
 
 from .conftest import NOW, make_evidence
 
@@ -19,7 +19,7 @@ def run(tmp_path, capsys):
     db = tmp_path / "ledger.db"
 
     def _run(*args, now=NOW_ARG):
-        code = main(["--db", str(db), "--now", now, *args])
+        code = main(["evidence", "--db", str(db), "--now", now, *args])
         out, err = capsys.readouterr()
         return code, out, err
 
@@ -153,7 +153,7 @@ def test_list_empty_and_filtered(run):
 
 
 def test_demo_runs(tmp_path, monkeypatch, capsys):
-    from ceoai import demo
+    from remit import demo
 
     monkeypatch.chdir(tmp_path)
     assert demo.main() == 0

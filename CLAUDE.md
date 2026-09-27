@@ -49,11 +49,11 @@ Ask before adding any dependency not listed here.
 ## Repository layout
 
 ```
-<REPO_NAME>/
+remit/
   README.md
   CLAUDE.md
   pyproject.toml
-  src/<pkg>/
+  src/remit/
     evidence/      # schema, ledger, admission states
     policy/        # capability definitions, grant rules, evaluator
     enforcement/   # adapter to Microsoft AGT

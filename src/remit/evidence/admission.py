@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 """Admission state: how far a piece of evidence gets up the admission hierarchy.
 
 The rules, applied in order. Evidence stops at the first stage it fails and the

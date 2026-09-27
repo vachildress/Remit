@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 """SQLite evidence ledger.
 
 Evidence is append-only apart from two withdrawals: expiry can be brought

@@ -1,5 +1,5 @@
 {
-  "_licence": "SPDX-License-Identifier: MIT. Copyright (c) 2026 The CEOAI contributors.",
+  "_licence": "SPDX-License-Identifier: MIT. Copyright (c) 2026 The remit contributors.",
   "_note": "Weekend 1 draft of the evidence each capability level needs. JSON is a subset of YAML, so this file moves to YAML unchanged once a YAML parser is approved.",
   "version": 1,
   "capabilities": {

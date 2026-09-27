@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 
 import copy
 import json
 
 import pytest
 
-from ceoai.evidence.model import WORLD_ACTING_CAPABILITIES, Capability, EvidenceClass, Level
-from ceoai.evidence.requirements import RuleError, default_rules_text, load_rules, parse_rules
+from remit.evidence.model import WORLD_ACTING_CAPABILITIES, Capability, EvidenceClass, Level
+from remit.evidence.requirements import RuleError, default_rules_text, load_rules, parse_rules
 
 
 @pytest.fixture

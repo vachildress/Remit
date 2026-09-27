@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 """Does the ledger currently support each level of a capability, and why?
 
-This is the reasoning behind ``evidence explain``. It answers only from the
+This is the reasoning behind ``remit evidence explain``. It answers only from the
 evidence and the requirements file. Grant policy (ceilings, restoration by
 attestation, enforcement) is built on top of it later and is not applied here.
 """

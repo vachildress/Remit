@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 
 from datetime import timedelta
 
 import pytest
 
-from ceoai.evidence.ledger import EvidenceNotFound, Ledger, LedgerError
-from ceoai.evidence.model import Capability, EvidenceClass, Subject
+from remit.evidence.ledger import EvidenceNotFound, Ledger, LedgerError
+from remit.evidence.model import Capability, EvidenceClass, Subject
 
 from .conftest import AGENT, NOW, make_evidence
 

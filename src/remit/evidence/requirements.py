@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 """Capability requirements: which evidence each capability level needs.
 
 The requirements live in a data file (``requirements.json`` by default), not
@@ -74,7 +74,7 @@ class RuleSet:
 
 
 def default_rules_text() -> str:
-    return resources.files("ceoai.evidence").joinpath("requirements.json").read_text()
+    return resources.files("remit.evidence").joinpath("requirements.json").read_text()
 
 
 def load_rules(path: str | Path | None = None) -> RuleSet:

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The CEOAI contributors
+# Copyright (c) 2026 The remit contributors
 """Weekend 1 demo: a synthetic ledger for one coding agent, and what it supports.
 
 All data is synthetic. Run with ``make demo`` or ``uv run demo``.
@@ -130,9 +130,9 @@ def main() -> int:
         print(summary(ledger, rules, now))
         print()
         print("Explore further with, for example:")
-        print(f"  uv run evidence --db {DEMO_DB} --now {now.isoformat()} list")
+        print(f"  uv run remit evidence --db {DEMO_DB} --now {now.isoformat()} list")
         print(
-            f"  uv run evidence --db {DEMO_DB} --now {now.isoformat()} "
+            f"  uv run remit evidence --db {DEMO_DB} --now {now.isoformat()} "
             f"explain all --agent {AGENT.agent_id} --version {AGENT.version}"
         )
     return 0
