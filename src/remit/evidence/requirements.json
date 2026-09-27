@@ -14,6 +14,72 @@
       "red_team_report": "internal_independent"
     }
   },
+  "tiers": {
+    "1": {
+      "max_age_days": 90,
+      "ceilings": {
+        "read_data": "limited",
+        "write_data": "none",
+        "network_out": "none",
+        "code_execution": "none",
+        "repo_write": "none",
+        "external_comms": "none",
+        "delegation": "none",
+        "budget": "limited"
+      }
+    },
+    "2": {
+      "max_age_days": 180,
+      "ceilings": {
+        "read_data": "full",
+        "write_data": "limited",
+        "network_out": "limited",
+        "code_execution": "limited",
+        "repo_write": "limited",
+        "external_comms": "none",
+        "delegation": "none",
+        "budget": "limited"
+      }
+    },
+    "3": {
+      "max_age_days": 365,
+      "ceilings": {
+        "read_data": "full",
+        "write_data": "full",
+        "network_out": "limited",
+        "code_execution": "full",
+        "repo_write": "full",
+        "external_comms": "limited",
+        "delegation": "limited",
+        "budget": "full"
+      }
+    },
+    "4": {
+      "max_age_days": 365,
+      "ceilings": {
+        "read_data": "full",
+        "write_data": "full",
+        "network_out": "full",
+        "code_execution": "full",
+        "repo_write": "full",
+        "external_comms": "full",
+        "delegation": "full",
+        "budget": "full"
+      }
+    },
+    "untiered": {
+      "ceilings": {
+        "read_data": "limited",
+        "write_data": "none",
+        "network_out": "none",
+        "code_execution": "none",
+        "repo_write": "none",
+        "external_comms": "none",
+        "delegation": "none",
+        "budget": "limited"
+      }
+    }
+  },
   "monitors": {
     "write-audit": {
       "description": "audits every data write against the task's declared targets",

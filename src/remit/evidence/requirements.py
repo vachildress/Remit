@@ -115,12 +115,28 @@ class CapabilityRules:
 
 
 @dataclass(frozen=True)
+class Tier:
+    """A model risk tier: the highest level each capability may reach."""
+
+    name: str
+    ceilings: Mapping[Capability, Level]
+    # Oldest standards_evidence naming this tier that still counts. None for
+    # the untiered row, which applies when no tier evidence counts.
+    max_age_days: float | None
+
+
+UNTIERED = "untiered"
+
+
+@dataclass(frozen=True)
 class RuleSet:
     capabilities: Mapping[Capability, CapabilityRules]
     age_limits: Mapping[EvidenceClass, float]
     monitors: Mapping[str, Monitor]
     # Least independent source role each class may come from, per level.
     independence: Mapping[Level, Mapping[EvidenceClass, str]] = field(default_factory=dict)
+    # Model risk tiers by name, including the untiered row. Empty means no ceilings.
+    tiers: Mapping[str, Tier] = field(default_factory=dict)
 
     def __getitem__(self, capability: Capability) -> CapabilityRules:
         return self.capabilities[capability]
@@ -179,13 +195,14 @@ def load_rules(path: str | Path | None = None, *, fmt: str | None = None) -> Rul
 
 def parse_rules(data: Mapping[str, Any]) -> RuleSet:
     data = {k: v for k, v in data.items() if not str(k).startswith("_")}
-    unknown_top = set(data) - {"version", "age_limits", "independence", "monitors", "capabilities"}
+    unknown_top = set(data) - {"version", "age_limits", "independence", "tiers", "monitors", "capabilities"}
     if unknown_top:
         raise RuleError(f"unknown top level fields: {', '.join(sorted(unknown_top))}")
 
     age_limits = _parse_age_limits(data.get("age_limits") or {})
     independence = _parse_independence(data.get("independence") or {})
     monitors = _parse_monitors(data.get("monitors") or {})
+    tiers = _parse_tiers(data.get("tiers") or {})
 
     caps = data.get("capabilities")
     if not isinstance(caps, Mapping):
@@ -201,7 +218,39 @@ def parse_rules(data: Mapping[str, Any]) -> RuleSet:
             raise RuleError(f"no rules for capability {capability.value}")
         cap_rules = _parse_capability(capability, caps[capability.value], age_limits, monitors, seen_ids)
         rules[capability] = cap_rules
-    return RuleSet(rules, age_limits, monitors, independence)
+    return RuleSet(rules, age_limits, monitors, independence, tiers)
+
+
+def _parse_tiers(raw: Mapping[str, Any]) -> dict[str, Tier]:
+    tiers = {}
+    for name, spec in raw.items():
+        name = str(name)
+        where = f"tiers.{name}"
+        spec = spec or {}
+        extra = set(spec) - {"ceilings", "max_age_days"}
+        if extra:
+            raise RuleError(f"{where}: unknown fields {', '.join(sorted(extra))}")
+        ceilings_raw = spec.get("ceilings") or {}
+        missing = {c.value for c in Capability} - set(ceilings_raw)
+        if missing:
+            raise RuleError(f"{where}: needs a ceiling for {', '.join(sorted(missing))}")
+        unknown = set(ceilings_raw) - {c.value for c in Capability}
+        if unknown:
+            raise RuleError(f"{where}: unknown capabilities {', '.join(sorted(unknown))}")
+        try:
+            ceilings = {Capability(c): Level(lvl) for c, lvl in ceilings_raw.items()}
+        except ValueError as exc:
+            raise RuleError(f"{where}: {exc}") from exc
+        max_age = spec.get("max_age_days")
+        if name == UNTIERED:
+            if max_age is not None:
+                raise RuleError(f"{where}: the untiered row has no evidence, so no max_age_days")
+        elif not _positive(max_age):
+            raise RuleError(f"{where}: max_age_days must be a positive number of days")
+        tiers[name] = Tier(name, ceilings, max_age)
+    if tiers and UNTIERED not in tiers:
+        raise RuleError("tiers: needs an 'untiered' row, applied when no tier evidence counts")
+    return tiers
 
 
 def _parse_independence(raw: Mapping[str, Any]) -> dict[Level, dict[EvidenceClass, str]]:

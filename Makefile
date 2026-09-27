@@ -9,6 +9,7 @@ demo:
 test:
 	uv run pytest
 
-# Regenerate the JSON mirror after editing requirements.yaml.
+# Regenerate the JSON mirrors after editing requirements.yaml or tools.yaml.
 rules-json:
 	uv run python -m remit.evidence.requirements
+	uv run python -m remit.enforcement.tools

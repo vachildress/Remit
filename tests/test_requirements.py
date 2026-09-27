@@ -256,6 +256,11 @@ def test_full_must_keep_limited_monitors(raw):
         (lambda d: d["monitors"]["budget-meter"].update(heartbeat_timeout_seconds=0), "heartbeat_timeout_seconds"),
         (lambda d: d["monitors"]["budget-meter"].update(min_effectiveness=2), "min_effectiveness"),
         (lambda d: d["independence"].update(none={}), "only 'limited' and 'full' take floors"),
+        (lambda d: d["tiers"].pop("untiered"), "needs an 'untiered' row"),
+        (lambda d: d["tiers"]["2"]["ceilings"].pop("budget"), "needs a ceiling for budget"),
+        (lambda d: d["tiers"]["2"]["ceilings"].update(budget="lots"), "lots"),
+        (lambda d: d["tiers"]["2"].pop("max_age_days"), "max_age_days must be a positive number"),
+        (lambda d: d["tiers"]["untiered"].update(max_age_days=30), "no max_age_days"),
         (lambda d: d["independence"]["full"].update(containment_test="friend"), "must be one of developer"),
         (lambda d: d["capabilities"]["budget"]["limited"]["requirements"][0].update(min_independence="friend"),
          "min_independence must be one of"),
@@ -281,3 +286,11 @@ def test_load_rules_from_file(tmp_path, raw):
     bad_yaml.write_text("capabilities: [unclosed")
     with pytest.raises(RuleError, match="not valid YAML"):
         load_rules(bad_yaml)
+
+
+def test_tiers_load_and_untiered_is_as_strict_as_tier_1():
+    rules = load_rules()
+    assert set(rules.tiers) == {"1", "2", "3", "4", "untiered"}
+    assert rules.tiers["untiered"].ceilings == rules.tiers["1"].ceilings
+    assert rules.tiers["untiered"].max_age_days is None
+    assert all(lvl is Level.FULL for lvl in rules.tiers["4"].ceilings.values())

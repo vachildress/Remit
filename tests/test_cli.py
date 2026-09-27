@@ -158,9 +158,14 @@ def test_demo_runs(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert demo.main() == 0
     out = capsys.readouterr().out
+    # Act 1: the containment gate and monitor silence.
     assert "can never satisfy a containment requirement" in out
     assert "has been silent for" in out
-    assert "escape found in the shared sandbox image" in out
+    # Act 2: the tier ceiling, the three flips and the history.
+    assert "evidence supports full, capped by the tier" in out
+    flips = [line.split()[0] for line in out.splitlines() if line.strip().startswith(("ALLOW ", "DENY ", "HOLD "))]
+    assert flips == ["ALLOW", "DENY", "DENY", "HOLD", "ALLOW", "DENY"]
+    assert "[expiry ev2-sandbox-cert]" in out
 
 
 def test_demo_runs_without_pyyaml(tmp_path, monkeypatch, capsys):
@@ -171,17 +176,69 @@ def test_demo_runs_without_pyyaml(tmp_path, monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "yaml", None)
     monkeypatch.chdir(tmp_path)
     assert demo.main() == 0
-    assert "Final position" in capsys.readouterr().out
+    assert "Grant history" in capsys.readouterr().out
 
 
-def test_explain_says_an_unknown_suite_does_not_count(run):
-    run(
-        "add", "--id", "ev-trivial", "--class", "eval_result", "--agent", "cli-agent", "--version", "1",
-        "--scope", "budget", "--source", "lab", "--source-authority", "eval_result",
-        "--strength", "suite=trivial-suite", "--strength", "pass_rate=1.0", "--strength", "samples=500",
-        "--expires-in-days", "30", "--content-hash", "sha256:" + "c" * 64,
+def seed_grants(tmp_path):
+    from remit.evidence.ledger import Ledger
+
+    from .conftest import full_set
+    from .test_policy import attest, tier
+
+    db = tmp_path / "ledger.db"
+    with Ledger(db) as led:
+        for e in full_set(Capability.CODE_EXECUTION) + [tier("2"), attest(Capability.CODE_EXECUTION, "full")]:
+            led.add(e)
+    return db
+
+
+def test_grant_show_history_and_check(tmp_path, capsys):
+    db = seed_grants(tmp_path)
+
+    code = main(["grant", "--db", str(db), "--now", NOW_ARG, "show", "test-agent@1.0.0"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Ceiling: the tier 2 ceiling" in out
+    assert "code_execution" in out and "capped, evidence supports full" in out
+
+    code = main(["check", "--db", str(db), "--now", NOW_ARG, "--pep", "stub", "test-agent@1.0.0", "tests.run"])
+    out = capsys.readouterr().out
+    assert code == 0 and out.startswith("ALLOW  tests.run") and "enforced by stub" in out
+
+    code = main(["check", "--db", str(db), "--now", NOW_ARG, "test-agent@1.0.0", "shell.run_networked"])
+    out = capsys.readouterr().out
+    assert out.startswith("DENY") and "the tier 2 ceiling" in out
+
+    code = main(["check", "--db", str(db), "--now", NOW_ARG, "test-agent@1.0.0", "git.merge_main"])
+    assert "red line" in capsys.readouterr().out
+
+    code = main(["grant", "--db", str(db), "history", "test-agent"])
+    out = capsys.readouterr().out
+    assert "code_execution: none -> limited  [attestation" in out
+
+
+def test_grant_history_empty_and_bad_subject(tmp_path, capsys):
+    db = tmp_path / "empty.db"
+    assert main(["grant", "--db", str(db), "history", "nobody"]) == 0
+    assert "No grant changes recorded" in capsys.readouterr().out
+    assert main(["grant", "--db", str(db), "show", "no-version"]) == 1
+    assert "agent@version" in capsys.readouterr().err
+
+
+def test_check_with_agt_is_enforced_by_agt(tmp_path, capsys):
+    pytest.importorskip("agent_os")
+    db = seed_grants(tmp_path)
+    main(["check", "--db", str(db), "--now", NOW_ARG, "--pep", "agt", "test-agent@1.0.0", "tests.run"])
+    assert "enforced by agt" in capsys.readouterr().out
+
+
+def test_tier_given_on_the_command_line_stays_text(run):
+    code, out, _ = run(
+        "add", "--id", "ev-tier", "--class", "standards_evidence", "--agent", "a", "--version", "1",
+        "--scope", "budget", "--source", "office", "--source-authority", "standards_evidence",
+        "--strength", "standard=Synthetic", "--strength", "clause=tiering", "--strength", "tier=2",
+        "--expires-in-days", "30", "--content-hash", "sha256:" + "d" * 64,
     )
-    code, out, _ = run("explain", "budget", "--agent", "cli-agent", "--version", "1")
-    assert "Highest level the evidence supports: none" in out
-    assert "suite 'trivial-suite' is not one of the suites that count here" in out
-    assert "an unknown suite does not count" in out
+    assert "gate_eligible" in out
+    code, out, _ = run("show", "ev-tier")
+    assert '"tier": "2"' in out

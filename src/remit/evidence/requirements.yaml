@@ -72,6 +72,78 @@ independence:
     # Red teaming your own agent finds what you already thought of.
     red_team_report: internal_independent
 
+# Model risk tiers. standards_evidence naming a tier sets a ceiling: no
+# capability may exceed the tier's level for it, whatever other evidence
+# exists. The strictest tier among current tier evidence applies. Tier
+# evidence counts only while gate eligible and younger than its tier's
+# max_age_days, which is the standards_evidence age limit "per its tier".
+# With no current tier evidence, the untiered row applies, and it is as
+# strict as tier 1: letting tier evidence lapse must never lift a ceiling.
+#
+# PLACEHOLDERS. Tier 1 is the highest model risk. Weekend 7 maps these to
+# PRA SS1/23 model risk tiers; until then the values only illustrate the
+# mechanism and carry no regulatory meaning.
+tiers:
+  "1":
+    # Highest risk: re-tiered quarterly.
+    max_age_days: 90
+    ceilings:
+      read_data: limited       # may read, not in bulk
+      write_data: none
+      network_out: none
+      code_execution: none
+      repo_write: none
+      external_comms: none
+      delegation: none
+      budget: limited          # hard capped runs only
+  "2":
+    # Re-tiered twice a year.
+    max_age_days: 180
+    ceilings:
+      read_data: full
+      write_data: limited
+      network_out: limited
+      code_execution: limited  # sandboxed execution only
+      repo_write: limited      # branches, never merges
+      external_comms: none     # nothing reaches people unsupervised
+      delegation: none
+      budget: limited
+  "3":
+    # Re-tiered yearly.
+    max_age_days: 365
+    ceilings:
+      read_data: full
+      write_data: full
+      network_out: limited
+      code_execution: full
+      repo_write: full
+      external_comms: limited
+      delegation: limited
+      budget: full
+  "4":
+    # Lowest risk: re-tiered yearly; the evidence decides everything.
+    max_age_days: 365
+    ceilings:
+      read_data: full
+      write_data: full
+      network_out: full
+      code_execution: full
+      repo_write: full
+      external_comms: full
+      delegation: full
+      budget: full
+  untiered:
+    # No current tier evidence: as strict as tier 1 (fail closed).
+    ceilings:
+      read_data: limited
+      write_data: none
+      network_out: none
+      code_execution: none
+      repo_write: none
+      external_comms: none
+      delegation: none
+      budget: limited
+
 # Monitors that capability levels can depend on. A monitor is healthy when
 # its latest monitor_health record for the agent reports state "healthy",
 # its last heartbeat is within heartbeat_timeout_seconds, and its measured

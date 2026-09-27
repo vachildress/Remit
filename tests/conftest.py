@@ -9,9 +9,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from remit.evidence.ledger import Ledger
-from remit.evidence.model import Capability, Evidence, EvidenceClass, Source, Subject, hash_artefact
+from remit.evidence.model import Capability, Evidence, EvidenceClass, Level, Source, Subject, hash_artefact
+from remit.evidence.requirements import load_rules
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+RULES = load_rules()
+E = EvidenceClass
 AGENT = Subject("test-agent", "1.0.0")
 
 STRENGTH = {
@@ -73,6 +76,43 @@ def make_evidence(
         content_hash=content_hash,
         **overrides,
     )
+
+
+def pinned(cap, cls, field):
+    """The first suite or exercise the rules accept for ``cap``."""
+    for req, _ in RULES[cap].effective(Level.FULL):
+        if cls in req.classes and field in req.includes:
+            return req.includes[field][0]
+    return f"no-{field}-for-{cap.value}"
+
+
+def eval_ev(cap, strength=None, **kwargs):
+    kwargs.setdefault("scope", [cap])
+    merged = {"suite": pinned(cap, E.EVAL_RESULT, "suite"), **(strength or {})}
+    return make_evidence(E.EVAL_RESULT, strength=merged, **kwargs)
+
+
+def redteam_ev(cap, strength=None, **kwargs):
+    kwargs.setdefault("scope", [cap])
+    kwargs.setdefault("role", "external")
+    merged = {"exercise": pinned(cap, E.RED_TEAM_REPORT, "exercise"), **(strength or {})}
+    return make_evidence(E.RED_TEAM_REPORT, strength=merged, **kwargs)
+
+
+def satisfying(req, cap, subject=AGENT):
+    """Evidence that meets ``req`` for ``cap`` at any level, built from the rules."""
+    if req.monitor is not None:
+        # Exactly at the monitor's effectiveness threshold, which must pass.
+        strength = {"monitor_name": req.monitor.name, "effectiveness": req.monitor.min_effectiveness}
+        return make_evidence(E.MONITOR_HEALTH, scope=[cap], strength=strength, subject=subject)
+    cls = req.classes[0]
+    strength = {k: v[0] for k, v in req.includes.items() if k in ("suite", "exercise")}
+    return make_evidence(cls, scope=[cap], strength=strength, role="external", subject=subject)
+
+
+def full_set(cap, subject=AGENT):
+    """Evidence meeting every requirement of ``cap`` at full, one record per requirement."""
+    return [satisfying(req, cap, subject) for req, _ in RULES[cap].effective(Level.FULL)]
 
 
 @pytest.fixture

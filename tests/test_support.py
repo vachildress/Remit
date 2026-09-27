@@ -9,7 +9,7 @@ from remit.evidence.model import WORLD_ACTING_CAPABILITIES, Capability, Evidence
 from remit.evidence.requirements import load_rules
 from remit.evidence.support import explain_capability, rejection_reasons, render
 
-from .conftest import AGENT, NOW, make_evidence
+from .conftest import AGENT, NOW, eval_ev, full_set, make_evidence, redteam_ev
 
 C = Capability
 E = EvidenceClass
@@ -18,43 +18,6 @@ RULES = load_rules()
 
 def explain(evidence, cap):
     return explain_capability(evidence, RULES, cap, AGENT, NOW)
-
-
-def pinned(cap, cls, field):
-    """The first suite or exercise the rules accept for ``cap``."""
-    for req, _ in RULES[cap].effective(Level.FULL):
-        if cls in req.classes and field in req.includes:
-            return req.includes[field][0]
-    return f"no-{field}-for-{cap.value}"
-
-
-def eval_ev(cap, strength=None, **kwargs):
-    kwargs.setdefault("scope", [cap])
-    merged = {"suite": pinned(cap, E.EVAL_RESULT, "suite"), **(strength or {})}
-    return make_evidence(E.EVAL_RESULT, strength=merged, **kwargs)
-
-
-def redteam_ev(cap, strength=None, **kwargs):
-    kwargs.setdefault("scope", [cap])
-    kwargs.setdefault("role", "external")
-    merged = {"exercise": pinned(cap, E.RED_TEAM_REPORT, "exercise"), **(strength or {})}
-    return make_evidence(E.RED_TEAM_REPORT, strength=merged, **kwargs)
-
-
-def satisfying(req, cap):
-    """Evidence that meets ``req`` for ``cap`` at any level, built from the rules."""
-    if req.monitor is not None:
-        # Exactly at the monitor's effectiveness threshold, which must pass.
-        strength = {"monitor_name": req.monitor.name, "effectiveness": req.monitor.min_effectiveness}
-        return make_evidence(E.MONITOR_HEALTH, scope=[cap], strength=strength)
-    cls = req.classes[0]
-    strength = {k: v[0] for k, v in req.includes.items() if k in ("suite", "exercise")}
-    return make_evidence(cls, scope=[cap], strength=strength, role="external")
-
-
-def full_set(cap):
-    """Evidence meeting every requirement of ``cap`` at full, one record per requirement."""
-    return [satisfying(req, cap) for req, _ in RULES[cap].effective(Level.FULL)]
 
 
 @pytest.mark.parametrize("cap", list(Capability))

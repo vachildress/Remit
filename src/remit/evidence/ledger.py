@@ -79,6 +79,11 @@ class Ledger:
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """The underlying connection, shared with the grant store."""
+        return self._conn
+
     def close(self) -> None:
         self._conn.close()
 
