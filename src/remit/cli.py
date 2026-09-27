@@ -15,6 +15,7 @@ from typing import Any, Sequence
 from .evidence.admission import assess
 from .evidence.ledger import Ledger, LedgerError
 from .evidence.model import (
+    SOURCE_ROLES,
     Capability,
     Evidence,
     EvidenceClass,
@@ -57,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--version", help="agent version of the subject")
     add.add_argument("--scope", default="", help="comma separated capabilities it can support")
     add.add_argument("--source", default="", help="who produced it")
+    add.add_argument(
+        "--source-role",
+        default="developer",
+        choices=list(SOURCE_ROLES),
+        help="how independent the source is of the agent's developer (default: developer)",
+    )
     add.add_argument(
         "--source-authority",
         default="",
@@ -156,7 +163,11 @@ def _evidence_from_flags(args: argparse.Namespace, now) -> Evidence:
         evidence_class=EvidenceClass(args.evidence_class),
         subject=Subject(args.agent, args.version),
         scope=frozenset(Capability(c) for c in _split(args.scope)),
-        source=Source(args.source, frozenset(EvidenceClass(c) for c in _split(args.source_authority))),
+        source=Source(
+            args.source,
+            frozenset(EvidenceClass(c) for c in _split(args.source_authority)),
+            args.source_role,
+        ),
         strength=strength,
         issued_at=issued,
         expires_at=expires,

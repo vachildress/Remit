@@ -30,7 +30,7 @@ def add_eval(run, *extra):
     return run(
         "add", "--id", "ev-cli-eval", "--class", "eval_result", "--agent", "cli-agent", "--version", "1",
         "--scope", "budget,read_data", "--source", "lab", "--source-authority", "eval_result",
-        "--strength", "suite=synthetic", "--strength", "pass_rate=0.9", "--strength", "samples=120",
+        "--strength", "suite=synthetic-long-horizon-v1", "--strength", "pass_rate=0.9", "--strength", "samples=120",
         "--expires-in-days", "30", "--content-hash", "sha256:" + "a" * 64, *extra,
     )
 
@@ -172,3 +172,16 @@ def test_demo_runs_without_pyyaml(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert demo.main() == 0
     assert "Final position" in capsys.readouterr().out
+
+
+def test_explain_says_an_unknown_suite_does_not_count(run):
+    run(
+        "add", "--id", "ev-trivial", "--class", "eval_result", "--agent", "cli-agent", "--version", "1",
+        "--scope", "budget", "--source", "lab", "--source-authority", "eval_result",
+        "--strength", "suite=trivial-suite", "--strength", "pass_rate=1.0", "--strength", "samples=500",
+        "--expires-in-days", "30", "--content-hash", "sha256:" + "c" * 64,
+    )
+    code, out, _ = run("explain", "budget", "--agent", "cli-agent", "--version", "1")
+    assert "Highest level the evidence supports: none" in out
+    assert "suite 'trivial-suite' is not one of the suites that count here" in out
+    assert "an unknown suite does not count" in out

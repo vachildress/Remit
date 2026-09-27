@@ -44,12 +44,13 @@ RISK_LEVELS = ("low", "medium", "high")
 MONITOR_STATES = ("healthy", "degraded", "down")
 CONTAINMENT_BOUNDARIES = ("filesystem", "network_egress", "credential_access", "process_escape")
 DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 300
+GRANTABLE_LEVELS = ("limited", "full")
 
 
 @dataclass(frozen=True)
 class FieldSpec:
     name: str
-    kind: str  # text, fraction, count, risk, monitor_state, boundaries, timestamp, seconds
+    kind: str  # text, fraction, count, risk, monitor_state, boundaries, timestamp, seconds, level
     required: bool = True
 
 
@@ -61,6 +62,8 @@ CLASS_FIELDS: dict[EvidenceClass, tuple[FieldSpec, ...]] = {
         FieldSpec("log_ref", "text", required=False),
     ),
     EvidenceClass.RED_TEAM_REPORT: (
+        # The named adversarial exercise that was run, as a requirement pins it.
+        FieldSpec("exercise", "text"),
         FieldSpec("scope_tested", "text"),
         FieldSpec("findings_open", "count"),
         FieldSpec("residual_risk", "risk"),
@@ -82,6 +85,8 @@ CLASS_FIELDS: dict[EvidenceClass, tuple[FieldSpec, ...]] = {
         FieldSpec("role", "text"),
         FieldSpec("attests_to", "text"),
         FieldSpec("smf_function", "text", required=False),
+        # The capability level this person signs off, for expanding a grant.
+        FieldSpec("grants_level", "level", required=False),
     ),
     EvidenceClass.STANDARDS_EVIDENCE: (
         FieldSpec("standard", "text"),
@@ -220,6 +225,9 @@ def _value_problem(spec: FieldSpec, value: Any) -> str | None:
                 f"'{name}' has unknown boundaries {', '.join(map(str, unknown))}; "
                 f"known boundaries are {', '.join(CONTAINMENT_BOUNDARIES)}"
             )
+    elif spec.kind == "level":
+        if value not in GRANTABLE_LEVELS:
+            return f"'{name}' should be one of {', '.join(GRANTABLE_LEVELS)}, got {value!r}"
     elif spec.kind == "timestamp":
         try:
             parse_timestamp(str(value))

@@ -93,6 +93,7 @@ class Ledger:
         source = {
             "name": evidence.source.name,
             "authorised_classes": sorted(c.value for c in evidence.source.authorised_classes),
+            "role": evidence.source.role,
         }
         try:
             with self._conn:
@@ -208,7 +209,7 @@ class Ledger:
             evidence_class=EvidenceClass(row["evidence_class"]),
             subject=Subject(row["agent_id"], row["agent_version"]),
             scope=frozenset(Capability(c) for c in json.loads(row["scope"])),
-            source=Source(source["name"], frozenset(source["authorised_classes"])),
+            source=Source(source["name"], frozenset(source["authorised_classes"]), source.get("role", "developer")),
             strength=json.loads(row["strength"]),
             issued_at=_from_db_ts(row["issued_at"]),
             expires_at=_from_db_ts(row["expires_at"]),

@@ -20,22 +20,41 @@ def explain(evidence, cap):
     return explain_capability(evidence, RULES, cap, AGENT, NOW)
 
 
-def full_set(cap, monitor=None):
-    """Evidence meeting every requirement of ``cap`` at full, one record per class."""
-    reqs = [r for r, _ in RULES[cap].effective(Level.FULL)]
-    out = [make_evidence(E.EVAL_RESULT, scope=[cap])]
-    if any(r.containment for r in reqs):
-        out.append(make_evidence(E.CONTAINMENT_TEST, scope=[cap]))
-    for r in reqs:
-        if r.monitor is not None:
-            # Exactly at the monitor's effectiveness threshold, which must pass.
-            strength = {"monitor_name": r.monitor.name, "effectiveness": r.monitor.min_effectiveness}
-            out.append(make_evidence(E.MONITOR_HEALTH, scope=[cap], strength=strength))
-    if any(E.RED_TEAM_REPORT in r.classes for r in reqs):
-        out.append(make_evidence(E.RED_TEAM_REPORT, scope=[cap]))
-    if any(E.HUMAN_ATTESTATION in r.classes for r in reqs):
-        out.append(make_evidence(E.HUMAN_ATTESTATION, scope=[cap]))
-    return out
+def pinned(cap, cls, field):
+    """The first suite or exercise the rules accept for ``cap``."""
+    for req, _ in RULES[cap].effective(Level.FULL):
+        if cls in req.classes and field in req.includes:
+            return req.includes[field][0]
+    return f"no-{field}-for-{cap.value}"
+
+
+def eval_ev(cap, strength=None, **kwargs):
+    kwargs.setdefault("scope", [cap])
+    merged = {"suite": pinned(cap, E.EVAL_RESULT, "suite"), **(strength or {})}
+    return make_evidence(E.EVAL_RESULT, strength=merged, **kwargs)
+
+
+def redteam_ev(cap, strength=None, **kwargs):
+    kwargs.setdefault("scope", [cap])
+    kwargs.setdefault("role", "external")
+    merged = {"exercise": pinned(cap, E.RED_TEAM_REPORT, "exercise"), **(strength or {})}
+    return make_evidence(E.RED_TEAM_REPORT, strength=merged, **kwargs)
+
+
+def satisfying(req, cap):
+    """Evidence that meets ``req`` for ``cap`` at any level, built from the rules."""
+    if req.monitor is not None:
+        # Exactly at the monitor's effectiveness threshold, which must pass.
+        strength = {"monitor_name": req.monitor.name, "effectiveness": req.monitor.min_effectiveness}
+        return make_evidence(E.MONITOR_HEALTH, scope=[cap], strength=strength)
+    cls = req.classes[0]
+    strength = {k: v[0] for k, v in req.includes.items() if k in ("suite", "exercise")}
+    return make_evidence(cls, scope=[cap], strength=strength, role="external")
+
+
+def full_set(cap):
+    """Evidence meeting every requirement of ``cap`` at full, one record per requirement."""
+    return [satisfying(req, cap) for req, _ in RULES[cap].effective(Level.FULL)]
 
 
 @pytest.mark.parametrize("cap", list(Capability))
@@ -55,8 +74,8 @@ def test_complete_evidence_supports_full_for_every_capability(cap):
 
 @pytest.mark.parametrize("cap", sorted(WORLD_ACTING_CAPABILITIES))
 def test_behavioural_evidence_alone_never_opens_a_world_acting_capability(cap):
-    perfect = make_evidence(E.EVAL_RESULT, scope=[cap], strength={"pass_rate": 1.0, "samples": 100000})
-    redteam = make_evidence(E.RED_TEAM_REPORT, scope=[cap])
+    perfect = eval_ev(cap, strength={"pass_rate": 1.0, "samples": 100000})
+    redteam = redteam_ev(cap)
     others = [e for e in full_set(cap) if e.evidence_class is not E.CONTAINMENT_TEST]
     ex = explain([perfect, redteam, *others], cap)
     assert ex.highest_supported is Level.NONE
@@ -115,14 +134,16 @@ def test_expiry_and_revocation_withdraw_support():
     cap = C.CODE_EXECUTION
     evidence = full_set(cap)
     expired = [
-        make_evidence(E.CONTAINMENT_TEST, scope=[cap], expires_at=NOW) if e.evidence_class is E.CONTAINMENT_TEST else e
+        make_evidence(E.CONTAINMENT_TEST, scope=[cap], expires_at=NOW, role="external")
+        if e.evidence_class is E.CONTAINMENT_TEST
+        else e
         for e in evidence
     ]
     ex = explain(expired, cap)
     assert ex.highest_supported is Level.NONE
     assert "expired at" in render(ex)
     revoked = [
-        make_evidence(E.EVAL_RESULT, scope=[cap], revoked_at=NOW, revocation_reason="suite leaked into training")
+        eval_ev(cap, revoked_at=NOW, revocation_reason="suite leaked into training")
         if e.evidence_class is E.EVAL_RESULT
         else e
         for e in evidence
@@ -135,7 +156,7 @@ def test_expiry_and_revocation_withdraw_support():
 def test_age_limit_applies_even_while_evidence_is_unexpired():
     cap = C.CODE_EXECUTION
     old = make_evidence(E.CONTAINMENT_TEST, scope=[cap], issued_at=NOW - timedelta(days=20),
-                        expires_at=NOW + timedelta(days=100))
+                        expires_at=NOW + timedelta(days=100), role="external")
     evidence = [e for e in full_set(cap) if e.evidence_class is not E.CONTAINMENT_TEST] + [old]
     ex = explain(evidence, cap)
     # 20 days is inside the 30 day limit for limited but outside the 14 day limit for full.
@@ -145,7 +166,7 @@ def test_age_limit_applies_even_while_evidence_is_unexpired():
 
 def test_strength_thresholds():
     cap = C.WRITE_DATA
-    weak = make_evidence(E.EVAL_RESULT, scope=[cap], strength={"pass_rate": 0.85})
+    weak = eval_ev(cap, strength={"pass_rate": 0.85})
     leaky = make_evidence(E.CONTAINMENT_TEST, scope=[cap], strength={"escape_attempts": 10, "escape_attempts_blocked": 9})
     text = render(explain([weak, leaky], cap))
     assert "pass_rate is 0.85, needs at least 0.9" in text
@@ -155,24 +176,25 @@ def test_strength_thresholds():
 def test_containment_must_cover_required_boundaries():
     cap = C.NETWORK_OUT
     fs_only = make_evidence(E.CONTAINMENT_TEST, scope=[cap], strength={"boundaries_tested": ["filesystem"]})
-    ex = explain([make_evidence(E.EVAL_RESULT, scope=[cap]), fs_only], cap)
+    ex = explain([eval_ev(cap), fs_only], cap)
     assert ex.highest_supported is Level.NONE
     assert "does not cover network_egress" in render(ex)
 
 
 def test_red_team_residual_risk_ceiling():
     cap = C.READ_DATA
-    high = make_evidence(E.RED_TEAM_REPORT, scope=[cap], strength={"residual_risk": "high"})
-    medium = make_evidence(E.RED_TEAM_REPORT, scope=[cap], strength={"residual_risk": "medium"})
-    ev = make_evidence(E.EVAL_RESULT, scope=[cap])
-    assert explain([ev, high], cap).highest_supported is Level.LIMITED
-    assert explain([ev, medium], cap).highest_supported is Level.FULL
+    high = redteam_ev(cap, strength={"residual_risk": "high"})
+    medium = redteam_ev(cap, strength={"residual_risk": "medium"})
+    ev = eval_ev(cap)
+    attest = make_evidence(E.HUMAN_ATTESTATION, scope=[cap])
+    assert explain([ev, high, attest], cap).highest_supported is Level.LIMITED
+    assert explain([ev, medium, attest], cap).highest_supported is Level.FULL
 
 
 def test_out_of_scope_and_other_subject_evidence_is_ignored():
     cap = C.BUDGET
-    wrong_scope = make_evidence(E.EVAL_RESULT, scope=[C.READ_DATA])
-    wrong_version = make_evidence(E.EVAL_RESULT, scope=[cap], subject=Subject(AGENT.agent_id, "0.9.0"))
+    wrong_scope = eval_ev(cap, scope=[C.READ_DATA])
+    wrong_version = eval_ev(cap, subject=Subject(AGENT.agent_id, "0.9.0"))
     ex = explain([wrong_scope, wrong_version], cap)
     assert ex.highest_supported is Level.NONE
     assert "not scoped to budget was ignored" in render(ex)
@@ -180,7 +202,7 @@ def test_out_of_scope_and_other_subject_evidence_is_ignored():
 
 def test_unauthorised_source_does_not_count():
     cap = C.BUDGET
-    ex = explain([make_evidence(E.EVAL_RESULT, scope=[cap], authorised=False)], cap)
+    ex = explain([eval_ev(cap, authorised=False)], cap)
     assert ex.highest_supported is Level.NONE
     assert "no recorded authority" in render(ex)
 
@@ -256,5 +278,54 @@ def test_render_states_what_healthy_means():
 
 
 def test_eval_alone_does_not_reach_full_read_data():
-    ex = explain([make_evidence(E.EVAL_RESULT, scope=[C.READ_DATA])], C.READ_DATA)
+    ex = explain([eval_ev(C.READ_DATA)], C.READ_DATA)
     assert ex.highest_supported is Level.LIMITED
+
+
+def test_developer_sourced_containment_does_not_count_at_full():
+    cap = C.CODE_EXECUTION
+    evidence = [
+        make_evidence(E.CONTAINMENT_TEST, scope=[cap], role="developer")
+        if e.evidence_class is E.CONTAINMENT_TEST
+        else e
+        for e in full_set(cap)
+    ]
+    ex = explain(evidence, cap)
+    # A team may certify its own sandbox for limited, but not for full.
+    assert ex.highest_supported is Level.LIMITED
+    assert "is developer, and at this level containment_test must come from a source that is at least internal_independent" in render(ex)
+
+
+def test_developer_sourced_red_team_does_not_count_at_full():
+    cap = C.NETWORK_OUT
+    evidence = [redteam_ev(cap, role="developer") if e.evidence_class is E.RED_TEAM_REPORT else e for e in full_set(cap)]
+    assert explain(evidence, cap).highest_supported is Level.LIMITED
+
+
+def test_inherited_limited_requirement_is_shown_in_full_when_its_outcome_differs():
+    cap = C.WRITE_DATA
+    evidence = [
+        make_evidence(E.CONTAINMENT_TEST, scope=[cap], role="developer")
+        if e.evidence_class is E.CONTAINMENT_TEST
+        else e
+        for e in full_set(cap)
+    ]
+    text = render(explain(evidence, cap))
+    # Met at limited, unmet at full because of the independence floor: shown
+    # in full under full rather than collapsed to "see limited".
+    assert "[met]   write.contain: File system containment holds [containment]" in text
+    assert "[unmet] write.contain: File system containment holds [containment]" in text
+    assert "[unmet] write.contain: File system containment holds (see limited)" not in text
+
+
+def test_red_team_from_another_exercise_does_not_count():
+    cap = C.CODE_EXECUTION
+    evidence = [
+        redteam_ev(cap, strength={"exercise": "synthetic-exfiltration-exercise-v1"})
+        if e.evidence_class is E.RED_TEAM_REPORT
+        else e
+        for e in full_set(cap)
+    ]
+    ex = explain(evidence, cap)
+    assert ex.highest_supported is Level.LIMITED
+    assert "exercise 'synthetic-exfiltration-exercise-v1' is not one of the exercises that count here" in render(ex)

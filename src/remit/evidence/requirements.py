@@ -14,6 +14,9 @@ Loading validates the standing rules:
 * every world-acting capability has at least one containment requirement at
   limited and at full;
 * no capability reaches full on a single evidence class;
+* every full level needs a human_attestation;
+* every requirement that accepts eval_result names the suites that count, and
+  every one that accepts red_team_report names the exercises that count;
 * no requirement accepts older evidence than the class age limit allows;
 * monitor dependencies are declared per level, by name, against a monitor
   definition that says what healthy means, and full depends on every monitor
@@ -22,6 +25,11 @@ Loading validates the standing rules:
 Levels are cumulative for evidence requirements: full needs everything
 limited needs, plus its own. Monitor dependencies are not inherited; each
 level lists its monitors explicitly.
+
+Independence is judged per level. The ``independence`` table sets the least
+independent source each class may come from at each level, and it applies to
+every requirement evaluated at that level, including those inherited from
+limited. A requirement may ask for more with ``min_independence``.
 """
 
 from __future__ import annotations
@@ -34,11 +42,17 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .admission import CONTAINMENT_BOUNDARIES, RISK_LEVELS, metric_kinds
-from .model import WORLD_ACTING_CAPABILITIES, Capability, EvidenceClass, Level
+from .model import SOURCE_ROLES, WORLD_ACTING_CAPABILITIES, Capability, EvidenceClass, Level
 
 NUMERIC_KINDS = {"fraction", "count", "seconds"}
 ORDERED_KINDS = NUMERIC_KINDS | {"risk"}
 MATCH_KINDS = {"text", "risk", "monitor_state"}
+# ``includes`` on a list field (boundaries) means the evidence must cover every
+# named value; on a text field (suite, exercise) it means the evidence's value
+# must be one of the named values.
+INCLUDES_KINDS = {"boundaries", "text"}
+# Classes whose requirements must name what counts, and the field that names it.
+PINNED_FIELDS = {EvidenceClass.EVAL_RESULT: "suite", EvidenceClass.RED_TEAM_REPORT: "exercise"}
 GRANTED_LEVELS = (Level.LIMITED, Level.FULL)
 PACKAGE = "remit.evidence"
 
@@ -73,6 +87,7 @@ class Requirement:
     match: Mapping[str, Any] = field(default_factory=dict)
     includes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     max_age_days: float | None = None
+    min_independence: str | None = None
     # Set only on the monitor requirements generated from a level's monitor list.
     monitor: Monitor | None = None
 
@@ -104,9 +119,17 @@ class RuleSet:
     capabilities: Mapping[Capability, CapabilityRules]
     age_limits: Mapping[EvidenceClass, float]
     monitors: Mapping[str, Monitor]
+    # Least independent source role each class may come from, per level.
+    independence: Mapping[Level, Mapping[EvidenceClass, str]] = field(default_factory=dict)
 
     def __getitem__(self, capability: Capability) -> CapabilityRules:
         return self.capabilities[capability]
+
+    def required_independence(self, requirement: Requirement, cls: EvidenceClass, level: Level) -> str:
+        """The least independent source role that counts for this requirement at this level."""
+        floor = self.independence.get(level, {}).get(cls, SOURCE_ROLES[0])
+        own = requirement.min_independence or SOURCE_ROLES[0]
+        return max(floor, own, key=SOURCE_ROLES.index)
 
 
 def yaml_available() -> bool:
@@ -156,11 +179,12 @@ def load_rules(path: str | Path | None = None, *, fmt: str | None = None) -> Rul
 
 def parse_rules(data: Mapping[str, Any]) -> RuleSet:
     data = {k: v for k, v in data.items() if not str(k).startswith("_")}
-    unknown_top = set(data) - {"version", "age_limits", "monitors", "capabilities"}
+    unknown_top = set(data) - {"version", "age_limits", "independence", "monitors", "capabilities"}
     if unknown_top:
         raise RuleError(f"unknown top level fields: {', '.join(sorted(unknown_top))}")
 
     age_limits = _parse_age_limits(data.get("age_limits") or {})
+    independence = _parse_independence(data.get("independence") or {})
     monitors = _parse_monitors(data.get("monitors") or {})
 
     caps = data.get("capabilities")
@@ -177,7 +201,27 @@ def parse_rules(data: Mapping[str, Any]) -> RuleSet:
             raise RuleError(f"no rules for capability {capability.value}")
         cap_rules = _parse_capability(capability, caps[capability.value], age_limits, monitors, seen_ids)
         rules[capability] = cap_rules
-    return RuleSet(rules, age_limits, monitors)
+    return RuleSet(rules, age_limits, monitors, independence)
+
+
+def _parse_independence(raw: Mapping[str, Any]) -> dict[Level, dict[EvidenceClass, str]]:
+    out: dict[Level, dict[EvidenceClass, str]] = {}
+    for level_name, table in raw.items():
+        if level_name not in {lvl.value for lvl in GRANTED_LEVELS}:
+            raise RuleError(f"independence: only 'limited' and 'full' take floors, got {level_name!r}")
+        level = Level(level_name)
+        out[level] = {}
+        for cls_name, role in (table or {}).items():
+            try:
+                cls = EvidenceClass(cls_name)
+            except ValueError as exc:
+                raise RuleError(f"independence.{level_name}: {exc}") from exc
+            if role not in SOURCE_ROLES:
+                raise RuleError(
+                    f"independence.{level_name}.{cls_name}: must be one of {', '.join(SOURCE_ROLES)}"
+                )
+            out[level][cls] = role
+    return out
 
 
 def _parse_age_limits(raw: Mapping[str, Any]) -> dict[EvidenceClass, float]:
@@ -288,6 +332,10 @@ def _parse_capability(
     full = [req for req, _ in cap_rules.effective(Level.FULL)]
     if not full:
         raise RuleError(f"{cap}.full has no requirements")
+    if not any(EvidenceClass.HUMAN_ATTESTATION in r.classes for r in full):
+        raise RuleError(
+            f"{cap}.full needs a human_attestation requirement: full is unrestricted authority"
+        )
     common = set.intersection(*(set(r.classes) for r in full))
     if common:
         raise RuleError(
@@ -299,6 +347,7 @@ def _parse_capability(
 
 REQUIREMENT_FIELDS = {
     "id", "description", "classes", "containment", "min", "max", "match", "includes", "max_age_days",
+    "min_independence",
 }
 
 
@@ -343,7 +392,17 @@ def _parse_requirement(
     for key, value in match.items():
         _check_metric(where, classes, key, value, MATCH_KINDS, "match")
     for key, value in includes.items():
-        _check_metric(where, classes, key, value, {"boundaries"}, "includes")
+        _check_metric(where, classes, key, value, INCLUDES_KINDS, "includes")
+    for cls, pinned in PINNED_FIELDS.items():
+        if cls in classes and not includes.get(pinned):
+            raise RuleError(
+                f"{where}: accepts {cls.value}, so it must name the {pinned}s that count "
+                f"with 'includes: {pinned}: [...]'"
+            )
+
+    min_independence = raw.get("min_independence")
+    if min_independence is not None and min_independence not in SOURCE_ROLES:
+        raise RuleError(f"{where}: min_independence must be one of {', '.join(SOURCE_ROLES)}")
 
     max_age = raw.get("max_age_days")
     if max_age is not None and not _positive(max_age):
@@ -371,6 +430,7 @@ def _parse_requirement(
         match=match,
         includes=includes,
         max_age_days=max_age,
+        min_independence=min_independence,
     )
 
 
@@ -396,6 +456,10 @@ def _check_metric(
             not value or any(b not in CONTAINMENT_BOUNDARIES for b in value)
         ):
             raise RuleError(f"{where}: '{key}' must list known boundaries")
+        if constraint == "includes" and kind == "text" and (
+            not value or not all(isinstance(v, str) and v for v in value)
+        ):
+            raise RuleError(f"{where}: '{key}' must list the names that count")
 
 
 def _positive(value: Any) -> bool:

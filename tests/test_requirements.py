@@ -132,11 +132,70 @@ def test_world_acting_capability_without_containment_is_rejected(raw):
 
 
 def test_full_on_a_single_class_is_rejected(raw):
+    # Make every read_data requirement a human attestation, so full would rest
+    # on that one class.
     read = raw["capabilities"]["read_data"]
-    read["full"]["requirements"][0].update(classes=["eval_result"], max_age_days=30)
-    read["full"]["requirements"][0].pop("max")
-    with pytest.raises(RuleError, match="eval_result alone"):
+    read["limited"]["requirements"] = [{"id": "read.only", "classes": ["human_attestation"], "max_age_days": 90}]
+    read["full"]["requirements"] = [r for r in read["full"]["requirements"] if r["id"] == "read.attest"]
+    with pytest.raises(RuleError, match="human_attestation alone"):
         parse_rules(raw)
+
+
+def test_full_without_attestation_is_rejected(raw):
+    full = raw["capabilities"]["network_out"]["full"]
+    full["requirements"] = [r for r in full["requirements"] if r["id"] != "net.attest"]
+    with pytest.raises(RuleError, match="network_out.full needs a human_attestation requirement"):
+        parse_rules(raw)
+
+
+@pytest.mark.parametrize("cap", list(Capability))
+def test_every_full_level_needs_an_attestation(cap):
+    reqs = [r for r, _ in load_rules()[cap].effective(Level.FULL)]
+    assert any(EvidenceClass.HUMAN_ATTESTATION in r.classes for r in reqs)
+
+
+def test_code_execution_full_needs_a_clean_red_team():
+    reqs = {r.id: r for r, _ in load_rules()[Capability.CODE_EXECUTION].effective(Level.FULL)}
+    red = reqs["exec.redteam"]
+    assert red.maximum == {"residual_risk": "low", "findings_open": 0}
+    assert red.includes == {"exercise": ("synthetic-sandbox-escape-exercise-v1",)}
+
+
+@pytest.mark.parametrize("cap", list(Capability))
+def test_eval_and_red_team_requirements_are_pinned(cap):
+    for req, _ in load_rules()[cap].effective(Level.FULL):
+        if EvidenceClass.EVAL_RESULT in req.classes:
+            assert req.includes.get("suite")
+        if EvidenceClass.RED_TEAM_REPORT in req.classes:
+            assert req.includes.get("exercise")
+
+
+@pytest.mark.parametrize(
+    "rid, cls, field",
+    [("budget.eval", "eval_result", "suite"), ("read.redteam", "red_team_report", "exercise")],
+)
+def test_unpinned_requirement_is_rejected(raw, rid, cls, field):
+    for levels in raw["capabilities"].values():
+        for level in levels.values():
+            for req in level["requirements"]:
+                if req["id"] == rid:
+                    req["includes"].pop(field)
+    with pytest.raises(RuleError, match=f"accepts {cls}, so it must name the {field}s that count"):
+        parse_rules(raw)
+
+
+def test_independence_floor_applies_at_full_only():
+    rules = load_rules()
+    [req] = [r for r, _ in rules[Capability.WRITE_DATA].effective(Level.LIMITED) if r.containment]
+    assert rules.required_independence(req, EvidenceClass.CONTAINMENT_TEST, Level.LIMITED) == "developer"
+    assert rules.required_independence(req, EvidenceClass.CONTAINMENT_TEST, Level.FULL) == "internal_independent"
+
+
+def test_requirement_can_ask_for_more_independence_than_the_floor(raw):
+    raw["capabilities"]["read_data"]["full"]["requirements"][0]["min_independence"] = "external"
+    rules = parse_rules(raw)
+    req = next(r for r, _ in rules[Capability.READ_DATA].effective(Level.FULL) if r.id == "read.redteam")
+    assert rules.required_independence(req, EvidenceClass.RED_TEAM_REPORT, Level.FULL) == "external"
 
 
 def test_looser_age_than_class_limit_is_rejected(raw):
@@ -196,6 +255,10 @@ def test_full_must_keep_limited_monitors(raw):
         (lambda d: d["age_limits"].update(eval_result=0), "positive number of days"),
         (lambda d: d["monitors"]["budget-meter"].update(heartbeat_timeout_seconds=0), "heartbeat_timeout_seconds"),
         (lambda d: d["monitors"]["budget-meter"].update(min_effectiveness=2), "min_effectiveness"),
+        (lambda d: d["independence"].update(none={}), "only 'limited' and 'full' take floors"),
+        (lambda d: d["independence"]["full"].update(containment_test="friend"), "must be one of developer"),
+        (lambda d: d["capabilities"]["budget"]["limited"]["requirements"][0].update(min_independence="friend"),
+         "min_independence must be one of"),
     ],
 )
 def test_invalid_rules_are_rejected(raw, mutate, fragment):

@@ -101,3 +101,17 @@ def test_hash_artefact():
     assert hash_artefact(b"abc") == (
         "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     )
+
+
+def test_source_role_defaults_to_least_independent_and_is_validated():
+    from remit.evidence.model import Source
+
+    assert Source("lab").role == "developer"
+    assert Source("lab", role="external").role == "external"
+    with pytest.raises(ValueError, match="source role must be one of"):
+        Source("lab", role="friend")
+
+
+def test_source_role_round_trips():
+    ev = make_evidence(role="internal_independent")
+    assert Evidence.from_dict(ev.to_dict()).source.role == "internal_independent"

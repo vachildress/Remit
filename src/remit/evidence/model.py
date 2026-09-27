@@ -146,12 +146,22 @@ class Subject:
         return f"{self.agent_id}@{self.version}"
 
 
+# How independent a source is of the agent's own developer or team, least
+# independent first. A missing role is treated as the least independent.
+SOURCE_ROLES = ("developer", "internal_independent", "external")
+
+
+def independence_rank(role: str) -> int:
+    return SOURCE_ROLES.index(role)
+
+
 @dataclass(frozen=True)
 class Source:
-    """Who produced the evidence, and which classes they are authorised to produce."""
+    """Who produced the evidence, which classes they may produce, and how independent they are."""
 
     name: str
     authorised_classes: frozenset[EvidenceClass] = frozenset()
+    role: str = "developer"
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -159,6 +169,8 @@ class Source:
             "authorised_classes",
             frozenset(EvidenceClass(c) for c in self.authorised_classes),
         )
+        if self.role not in SOURCE_ROLES:
+            raise ValueError(f"source role must be one of {', '.join(SOURCE_ROLES)}, got {self.role!r}")
 
     def is_authorised_for(self, evidence_class: EvidenceClass) -> bool:
         return evidence_class in self.authorised_classes
@@ -218,6 +230,7 @@ class Evidence:
             "source": {
                 "name": self.source.name,
                 "authorised_classes": sorted(c.value for c in self.source.authorised_classes),
+                "role": self.source.role,
             },
             "strength": dict(self.strength),
             "issued_at": ts(self.issued_at),
@@ -244,7 +257,11 @@ class Evidence:
             evidence_class=EvidenceClass(data["class"]),
             subject=subject,
             scope=frozenset(_as_iterable(data.get("scope", ()))),
-            source=Source(source.get("name", ""), frozenset(source.get("authorised_classes", ()))),
+            source=Source(
+                source.get("name", ""),
+                frozenset(source.get("authorised_classes", ())),
+                source.get("role", "developer"),
+            ),
             strength=data.get("strength") or {},
             issued_at=data["issued_at"],
             expires_at=data.get("expires_at"),

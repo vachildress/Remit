@@ -110,3 +110,8 @@ def test_persists_to_disk(tmp_path):
         led.revoke(ev.id, "r", at=NOW)
     with Ledger(path) as led:
         assert led.get(ev.id).revoked_at == NOW
+
+
+def test_source_role_persists(ledger):
+    ev = ledger.add(make_evidence(role="external"))
+    assert ledger.get(ev.id).source.role == "external"

@@ -3,8 +3,8 @@
 """Does the ledger currently support each level of a capability, and why?
 
 This is the reasoning behind ``remit evidence explain``. It answers only from the
-evidence and the requirements file. Grant policy (ceilings, restoration by
-attestation, enforcement) is built on top of it later and is not applied here.
+evidence and the requirements file. Grant policy (tier ceilings, expansion by
+attestation, delegation) is applied on top of it by ``remit.policy``.
 """
 
 from __future__ import annotations
@@ -21,7 +21,9 @@ from .model import (
     EvidenceClass,
     Level,
     Subject,
+    SOURCE_ROLES,
     format_timestamp,
+    independence_rank,
     parse_timestamp,
     utc,
 )
@@ -78,9 +80,17 @@ class CapabilityExplanation:
 
 
 def rejection_reasons(
-    evidence: Evidence, requirement: Requirement, capability: Capability, now: datetime
+    evidence: Evidence,
+    requirement: Requirement,
+    capability: Capability,
+    now: datetime,
+    required_role: str = SOURCE_ROLES[0],
 ) -> list[str]:
-    """Why this evidence does not satisfy the requirement. Empty means it does."""
+    """Why this evidence does not satisfy the requirement. Empty means it does.
+
+    ``required_role`` is the least independent source that counts, which
+    depends on the level being evaluated (see ``RuleSet.required_independence``).
+    """
     cls = evidence.evidence_class
     if requirement.containment and cls is not EvidenceClass.CONTAINMENT_TEST:
         return [
@@ -106,6 +116,11 @@ def rejection_reasons(
                 f"issued {_days(age)} ago, older than the {_fmt_num(requirement.max_age_days)} day limit"
             )
     reasons.extend(_strength_reasons(evidence, requirement))
+    if independence_rank(evidence.source.role) < independence_rank(required_role):
+        reasons.append(
+            f"source '{evidence.source.name}' is {evidence.source.role}, and at this level "
+            f"{cls.value} must come from a source that is at least {required_role}"
+        )
     if requirement.monitor is not None:
         heartbeat = _heartbeat(evidence)
         timeout = requirement.monitor.heartbeat_timeout_seconds
@@ -168,8 +183,15 @@ def _strength_reasons(evidence: Evidence, req: Requirement) -> list[str]:
         if value != expected:
             reasons.append(f"{key} is {value!r}, needs {expected!r}")
     for key, needed in req.includes.items():
-        value = metrics.get(key) or []
-        missing = [b for b in needed if b not in value]
+        value = metrics.get(key)
+        if kinds[key] == "text":
+            if value not in needed:
+                reasons.append(
+                    f"{key} {value!r} is not one of the {key}s that count here "
+                    f"({', '.join(needed)}); an unknown {key} does not count"
+                )
+            continue
+        missing = [b for b in needed if b not in (value or [])]
         if missing:
             reasons.append(f"{key} does not cover {', '.join(missing)}")
     return reasons
@@ -181,7 +203,12 @@ def _rank(kind: str, value: object) -> float:
     return float(value)  # type: ignore[arg-type]
 
 
-def remedy(requirement: Requirement, capability: Capability, subject: Subject) -> str:
+def remedy(
+    requirement: Requirement,
+    capability: Capability,
+    subject: Subject,
+    required_role: str = SOURCE_ROLES[0],
+) -> str:
     if requirement.monitor is not None:
         mon = requirement.monitor
         return (
@@ -196,13 +223,18 @@ def remedy(requirement: Requirement, capability: Capability, subject: Subject) -
     for key, bound in requirement.maximum.items():
         conditions.append(f"{key} at most {_fmt_num(bound)}")
     for key, needed in requirement.includes.items():
-        conditions.append(f"{key} covering {', '.join(needed)}")
+        if key in ("suite", "exercise"):
+            conditions.append(f"{key} {' or '.join(needed)}")
+        else:
+            conditions.append(f"{key} covering {', '.join(needed)}")
     for key, expected in requirement.match.items():
         conditions.append(f"{key} equal to {expected!r}")
     if conditions:
         parts.append(" with " + ", ".join(conditions))
     if requirement.max_age_days is not None:
         parts.append(f", issued within the last {_fmt_num(requirement.max_age_days)} days")
+    if required_role != SOURCE_ROLES[0]:
+        parts.append(f", from a source that is at least {required_role}")
     text = "".join(parts) + "."
     if requirement.containment:
         text += " Only containment_test evidence counts; eval_result and red_team_report never do."
@@ -249,7 +281,8 @@ def explain_capability(
                     e for e in pool if capability not in e.scope and e.evidence_class in req.classes
                 )
             for e in candidates:
-                reasons = rejection_reasons(e, req, capability, now)
+                role = rules.required_independence(req, e.evidence_class, level)
+                reasons = rejection_reasons(e, req, capability, now, role)
                 if reasons:
                     rejected.append(Rejection(e, tuple(reasons)))
                 else:
@@ -260,7 +293,12 @@ def explain_capability(
                     introduced_at=introduced_at,
                     satisfied_by=tuple(satisfied),
                     rejected=tuple(rejected),
-                    remedy=remedy(req, capability, subject),
+                    remedy=remedy(
+                        req,
+                        capability,
+                        subject,
+                        rules.required_independence(req, req.classes[0], level),
+                    ),
                     out_of_scope=out_of_scope,
                 )
             )
@@ -275,14 +313,16 @@ def render(explanation: CapabilityExplanation) -> str:
         "",
         "  none     SUPPORTED      no evidence needed",
     ]
+    shown: dict[tuple[str, Level], bool] = {}
     for outcome in e.levels:
         verdict = "SUPPORTED" if outcome.supported else "NOT SUPPORTED"
         lines.append(f"  {outcome.level.value:<8} {verdict}")
         for r in outcome.requirements:
             req = r.requirement
             tag = "[met]  " if r.met else "[unmet]"
-            if r.introduced_at is not outcome.level:
-                # Shown in full under the level that introduced it.
+            shown[(req.id, outcome.level)] = r.met
+            if r.introduced_at is not outcome.level and shown.get((req.id, r.introduced_at)) == r.met:
+                # Same outcome as under the level that introduced it, shown in full there.
                 lines.append(f"    {tag} {req.id}: {req.description} (see {r.introduced_at.value})")
                 continue
             containment = " [containment]" if req.containment else ""
@@ -317,7 +357,10 @@ def _describe(ev: Evidence, now: datetime) -> str:
         detail = f"suite {s.get('suite')!r}, pass rate {s.get('pass_rate')} on {s.get('samples')} samples"
     elif cls is EvidenceClass.RED_TEAM_REPORT:
         findings = s.get("findings_open")
-        detail = f"residual risk {s.get('residual_risk')}, {findings} open finding{'' if findings == 1 else 's'}"
+        detail = (
+            f"exercise {s.get('exercise')!r}, residual risk {s.get('residual_risk')}, "
+            f"{findings} open finding{'' if findings == 1 else 's'}"
+        )
     elif cls is EvidenceClass.CONTAINMENT_TEST:
         boundaries = ", ".join(s.get("boundaries_tested") or [])
         detail = (
@@ -328,12 +371,13 @@ def _describe(ev: Evidence, now: datetime) -> str:
         detail = f"monitor {s.get('monitor_name')!r} {s.get('state')}"
     elif cls is EvidenceClass.HUMAN_ATTESTATION:
         smf = f", {s['smf_function']}" if s.get("smf_function") else ""
-        detail = f"{s.get('person')} ({s.get('role')}{smf}) attests to {s.get('attests_to')!r}"
+        level = f", signing off {s['grants_level']}" if s.get("grants_level") else ""
+        detail = f"{s.get('person')} ({s.get('role')}{smf}) attests to {s.get('attests_to')!r}{level}"
     else:
         tier = f", tier {s['tier']}" if s.get("tier") else ""
         detail = f"{s.get('standard')} {s.get('clause')}{tier}"
     age = _days(now - ev.issued_at)
-    return f"{ev.id} ({cls.value}: {detail}; issued {age} ago by {ev.source.name})"
+    return f"{ev.id} ({cls.value}: {detail}; issued {age} ago by {ev.source.name}, {ev.source.role})"
 
 
 def _days(delta: timedelta) -> str:
