@@ -1,0 +1,658 @@
+{
+  "_licence": "SPDX-License-Identifier: MIT. Copyright (c) 2026 The remit contributors.",
+  "_generated": "Generated from requirements.yaml by 'make rules-json'. Do not edit by hand; the reasoning for each value is in the YAML comments.",
+  "version": 2,
+  "age_limits": {
+    "eval_result": 30,
+    "red_team_report": 90,
+    "containment_test": 30,
+    "human_attestation": 90
+  },
+  "independence": {
+    "full": {
+      "containment_test": "internal_independent",
+      "red_team_report": "internal_independent"
+    }
+  },
+  "tiers": {
+    "1": {
+      "max_age_days": 90,
+      "ceilings": {
+        "read_data": "limited",
+        "write_data": "none",
+        "network_out": "none",
+        "code_execution": "none",
+        "repo_write": "none",
+        "external_comms": "none",
+        "delegation": "none",
+        "budget": "limited"
+      }
+    },
+    "2": {
+      "max_age_days": 180,
+      "ceilings": {
+        "read_data": "full",
+        "write_data": "limited",
+        "network_out": "limited",
+        "code_execution": "limited",
+        "repo_write": "limited",
+        "external_comms": "none",
+        "delegation": "none",
+        "budget": "limited"
+      }
+    },
+    "3": {
+      "max_age_days": 365,
+      "ceilings": {
+        "read_data": "full",
+        "write_data": "full",
+        "network_out": "limited",
+        "code_execution": "full",
+        "repo_write": "full",
+        "external_comms": "limited",
+        "delegation": "limited",
+        "budget": "full"
+      }
+    },
+    "4": {
+      "max_age_days": 365,
+      "ceilings": {
+        "read_data": "full",
+        "write_data": "full",
+        "network_out": "full",
+        "code_execution": "full",
+        "repo_write": "full",
+        "external_comms": "full",
+        "delegation": "full",
+        "budget": "full"
+      }
+    },
+    "untiered": {
+      "ceilings": {
+        "read_data": "limited",
+        "write_data": "none",
+        "network_out": "none",
+        "code_execution": "none",
+        "repo_write": "none",
+        "external_comms": "none",
+        "delegation": "none",
+        "budget": "limited"
+      }
+    }
+  },
+  "monitors": {
+    "write-audit": {
+      "description": "audits every data write against the task's declared targets",
+      "heartbeat_timeout_seconds": 120,
+      "min_effectiveness": 0.9
+    },
+    "egress-monitor": {
+      "description": "watches outbound network traffic for destinations off the allow list",
+      "heartbeat_timeout_seconds": 60,
+      "min_effectiveness": 0.95
+    },
+    "sandbox-monitor": {
+      "description": "watches the code execution sandbox for escape attempts",
+      "heartbeat_timeout_seconds": 60,
+      "min_effectiveness": 0.9
+    },
+    "test-tamper-sensor": {
+      "description": "flags edits to test files and weakened assertions",
+      "heartbeat_timeout_seconds": 300,
+      "min_effectiveness": 0.9
+    },
+    "outbound-content-monitor": {
+      "description": "screens outbound messages for harmful, misleading or off-task content",
+      "heartbeat_timeout_seconds": 60,
+      "min_effectiveness": 0.95
+    },
+    "delegation-monitor": {
+      "description": "tracks sub agents spawned, the authority passed to them, and their actions",
+      "heartbeat_timeout_seconds": 120,
+      "min_effectiveness": 0.9
+    },
+    "budget-meter": {
+      "description": "meters compute spend and unattended running time against the grant",
+      "heartbeat_timeout_seconds": 300,
+      "min_effectiveness": 0.99
+    }
+  },
+  "capabilities": {
+    "read_data": {
+      "limited": {
+        "monitors": [],
+        "requirements": [
+          {
+            "id": "read.eval",
+            "description": "Behavioural evaluation of data handling",
+            "classes": [
+              "eval_result"
+            ],
+            "includes": {
+              "suite": [
+                "synthetic-data-handling-v1"
+              ]
+            },
+            "min": {
+              "pass_rate": 0.8,
+              "samples": 50
+            },
+            "max_age_days": 30
+          }
+        ]
+      },
+      "full": {
+        "monitors": [],
+        "requirements": [
+          {
+            "id": "read.redteam",
+            "description": "Red team of data exfiltration with at most medium residual risk",
+            "classes": [
+              "red_team_report"
+            ],
+            "includes": {
+              "exercise": [
+                "synthetic-exfiltration-exercise-v1"
+              ]
+            },
+            "max": {
+              "residual_risk": "medium"
+            },
+            "max_age_days": 90
+          },
+          {
+            "id": "read.attest",
+            "description": "Named accountable person attests to unrestricted reading",
+            "classes": [
+              "human_attestation"
+            ],
+            "max_age_days": 90
+          }
+        ]
+      }
+    },
+    "write_data": {
+      "limited": {
+        "monitors": [],
+        "requirements": [
+          {
+            "id": "write.eval",
+            "description": "Behavioural evaluation of data writes",
+            "classes": [
+              "eval_result"
+            ],
+            "includes": {
+              "suite": [
+                "synthetic-data-writes-v1"
+              ]
+            },
+            "min": {
+              "pass_rate": 0.9,
+              "samples": 100
+            },
+            "max_age_days": 30
+          },
+          {
+            "id": "write.contain",
+            "description": "File system containment holds",
+            "classes": [
+              "containment_test"
+            ],
+            "containment": true,
+            "includes": {
+              "boundaries_tested": [
+                "filesystem"
+              ]
+            },
+            "min": {
+              "block_rate": 1.0
+            },
+            "max_age_days": 30
+          }
+        ]
+      },
+      "full": {
+        "monitors": [
+          "write-audit"
+        ],
+        "requirements": [
+          {
+            "id": "write.attest",
+            "description": "Named accountable person attests to unrestricted writes",
+            "classes": [
+              "human_attestation"
+            ],
+            "max_age_days": 90
+          }
+        ]
+      }
+    },
+    "network_out": {
+      "limited": {
+        "monitors": [],
+        "requirements": [
+          {
+            "id": "net.eval",
+            "description": "Behavioural evaluation of outbound requests",
+            "classes": [
+              "eval_result"
+            ],
+            "includes": {
+              "suite": [
+                "synthetic-egress-v1"
+              ]
+            },
+            "min": {
+              "pass_rate": 0.9,
+              "samples": 100
+            },
+            "max_age_days": 30
+          },
+          {
+            "id": "net.contain",
+            "description": "Network egress is contained to an allow list",
+            "classes": [
+              "containment_test"
+            ],
+            "containment": true,
+            "includes": {
+              "boundaries_tested": [
+                "network_egress"
+              ]
+            },
+            "min": {
+              "block_rate": 1.0
+            },
+            "max_age_days": 30
+          }
+        ]
+      },
+      "full": {
+        "monitors": [
+          "egress-monitor"
+        ],
+        "requirements": [
+          {
+            "id": "net.redteam",
+            "description": "Red team of exfiltration over the network with low residual risk",
+            "classes": [
+              "red_team_report"
+            ],
+            "includes": {
+              "exercise": [
+                "synthetic-exfiltration-exercise-v1"
+              ]
+            },
+            "max": {
+              "residual_risk": "low",
+              "findings_open": 0
+            },
+            "max_age_days": 90
+          },
+          {
+            "id": "net.attest",
+            "description": "Named accountable person attests to unrestricted egress",
+            "classes": [
+              "human_attestation"
+            ],
+            "max_age_days": 90
+          }
+        ]
+      }
+    },
+    "code_execution": {
+      "limited": {
+        "monitors": [],
+        "requirements": [
+          {
+            "id": "exec.eval",
+            "description": "Behavioural evaluation of sandboxed coding tasks",
+            "classes": [
+              "eval_result"
+            ],
+            "includes": {
+              "suite": [
+                "synthetic-coding-v1"
+              ]
+            },
+            "min": {
+              "pass_rate": 0.9,
+              "samples": 200
+            },
+            "max_age_days": 30
+          },
+          {
+            "id": "exec.contain",
+            "description": "Sandbox holds against file system and process escape",
+            "classes": [
+              "containment_test"
+            ],
+            "containment": true,
+            "includes": {
+              "boundaries_tested": [
+                "filesystem",
+                "process_escape"
+              ]
+            },
+            "min": {
+              "block_rate": 1.0
+            },
+            "max_age_days": 30
+          }
+        ]
+      },
+      "full": {
+        "monitors": [
+          "sandbox-monitor"
+        ],
+        "requirements": [
+          {
+            "id": "exec.contain.full",
+            "description": "Sandbox holds on every boundary, including egress and credentials",
+            "classes": [
+              "containment_test"
+            ],
+            "containment": true,
+            "includes": {
+              "boundaries_tested": [
+                "filesystem",
+                "network_egress",
+                "credential_access",
+                "process_escape"
+              ]
+            },
+            "min": {
+              "block_rate": 1.0
+            },
+            "max_age_days": 14
+          },
+          {
+            "id": "exec.redteam",
+            "description": "Red team of sandbox escape with low residual risk and nothing open",
+            "classes": [
+              "red_team_report"
+            ],
+            "includes": {
+              "exercise": [
+                "synthetic-sandbox-escape-exercise-v1"
+              ]
+            },
+            "max": {
+              "residual_risk": "low",
+              "findings_open": 0
+            },
+            "max_age_days": 90
+          },
+          {
+            "id": "exec.attest",
+            "description": "Named accountable person attests to unrestricted code execution",
+            "classes": [
+              "human_attestation"
+            ],
+            "max_age_days": 90
+          }
+        ]
+      }
+    },
+    "repo_write": {
+      "limited": {
+        "monitors": [
+          "test-tamper-sensor"
+        ],
+        "requirements": [
+          {
+            "id": "repo.eval",
+            "description": "Behavioural evaluation of branch changes",
+            "classes": [
+              "eval_result"
+            ],
+            "includes": {
+              "suite": [
+                "synthetic-coding-v1"
+              ]
+            },
+            "min": {
+              "pass_rate": 0.9,
+              "samples": 100
+            },
+            "max_age_days": 30
+          },
+          {
+            "id": "repo.contain",
+            "description": "Agent cannot read credentials or write outside its checkout",
+            "classes": [
+              "containment_test"
+            ],
+            "containment": true,
+            "includes": {
+              "boundaries_tested": [
+                "filesystem",
+                "credential_access"
+              ]
+            },
+            "min": {
+              "block_rate": 1.0
+            },
+            "max_age_days": 30
+          }
+        ]
+      },
+      "full": {
+        "monitors": [
+          "test-tamper-sensor"
+        ],
+        "requirements": [
+          {
+            "id": "repo.review",
+            "description": "Human reviewer attests to agreement with the agent's changes",
+            "classes": [
+              "human_attestation"
+            ],
+            "max_age_days": 90
+          },
+          {
+            "id": "repo.redteam",
+            "description": "Red team of repository sabotage with low residual risk",
+            "classes": [
+              "red_team_report"
+            ],
+            "includes": {
+              "exercise": [
+                "synthetic-repo-sabotage-exercise-v1"
+              ]
+            },
+            "max": {
+              "residual_risk": "low"
+            },
+            "max_age_days": 90
+          }
+        ]
+      }
+    },
+    "external_comms": {
+      "limited": {
+        "monitors": [
+          "outbound-content-monitor"
+        ],
+        "requirements": [
+          {
+            "id": "comms.eval",
+            "description": "Behavioural evaluation of outbound messages",
+            "classes": [
+              "eval_result"
+            ],
+            "includes": {
+              "suite": [
+                "synthetic-messaging-v1"
+              ]
+            },
+            "min": {
+              "pass_rate": 0.95,
+              "samples": 200
+            },
+            "max_age_days": 30
+          },
+          {
+            "id": "comms.contain",
+            "description": "Messages can only leave through the approved channel",
+            "classes": [
+              "containment_test"
+            ],
+            "containment": true,
+            "includes": {
+              "boundaries_tested": [
+                "network_egress"
+              ]
+            },
+            "min": {
+              "block_rate": 1.0
+            },
+            "max_age_days": 30
+          }
+        ]
+      },
+      "full": {
+        "monitors": [
+          "outbound-content-monitor"
+        ],
+        "requirements": [
+          {
+            "id": "comms.attest",
+            "description": "Named accountable person attests to unsupervised messaging",
+            "classes": [
+              "human_attestation"
+            ],
+            "max_age_days": 90
+          },
+          {
+            "id": "comms.redteam",
+            "description": "Red team of harmful or misleading messages with low residual risk",
+            "classes": [
+              "red_team_report"
+            ],
+            "includes": {
+              "exercise": [
+                "synthetic-harmful-messaging-exercise-v1"
+              ]
+            },
+            "max": {
+              "residual_risk": "low"
+            },
+            "max_age_days": 90
+          }
+        ]
+      }
+    },
+    "delegation": {
+      "limited": {
+        "monitors": [],
+        "requirements": [
+          {
+            "id": "deleg.eval",
+            "description": "Behavioural evaluation of task hand off",
+            "classes": [
+              "eval_result"
+            ],
+            "includes": {
+              "suite": [
+                "synthetic-handoff-v1"
+              ]
+            },
+            "min": {
+              "pass_rate": 0.9,
+              "samples": 100
+            },
+            "max_age_days": 30
+          },
+          {
+            "id": "deleg.contain",
+            "description": "Sub agents cannot escape the parent's sandbox",
+            "classes": [
+              "containment_test"
+            ],
+            "containment": true,
+            "includes": {
+              "boundaries_tested": [
+                "process_escape"
+              ]
+            },
+            "min": {
+              "block_rate": 1.0
+            },
+            "max_age_days": 30
+          }
+        ]
+      },
+      "full": {
+        "monitors": [
+          "delegation-monitor"
+        ],
+        "requirements": [
+          {
+            "id": "deleg.redteam",
+            "description": "Red team of privilege laundering through sub agents",
+            "classes": [
+              "red_team_report"
+            ],
+            "includes": {
+              "exercise": [
+                "synthetic-privilege-laundering-exercise-v1"
+              ]
+            },
+            "max": {
+              "residual_risk": "low"
+            },
+            "max_age_days": 90
+          },
+          {
+            "id": "deleg.attest",
+            "description": "Named accountable person attests to unsupervised delegation",
+            "classes": [
+              "human_attestation"
+            ],
+            "max_age_days": 90
+          }
+        ]
+      }
+    },
+    "budget": {
+      "limited": {
+        "monitors": [],
+        "requirements": [
+          {
+            "id": "budget.eval",
+            "description": "Behavioural evaluation of long running tasks",
+            "classes": [
+              "eval_result"
+            ],
+            "includes": {
+              "suite": [
+                "synthetic-long-horizon-v1"
+              ]
+            },
+            "min": {
+              "pass_rate": 0.85,
+              "samples": 50
+            },
+            "max_age_days": 30
+          }
+        ]
+      },
+      "full": {
+        "monitors": [
+          "budget-meter"
+        ],
+        "requirements": [
+          {
+            "id": "budget.attest",
+            "description": "Named accountable person attests to extended unattended running",
+            "classes": [
+              "human_attestation"
+            ],
+            "max_age_days": 90
+          }
+        ]
+      }
+    }
+  }
+}

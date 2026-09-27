@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The remit contributors
+#
+# Which capability, at which level, each tool needs. The enforcement point
+# allows a call when the agent's grant for that capability is at or above the
+# level, holds it for a human when only an attestation is missing, and denies
+# it otherwise. Tools not listed here are denied (fail closed). Red lines are
+# always denied, whatever the grants say.
+#
+# This file is the source of truth; tools.json is generated from it with
+# `make rules-json` so the demo never depends on the YAML parser.
+#
+# Tool names are synthetic and illustrative. Weekend 3 revisits the coding
+# agent's tools against a real agent.
+
+version: 1
+
+tools:
+  # Reading
+  repo.read_file:
+    capability: read_data
+    level: limited      # one file at a time
+  records.read_bulk:
+    capability: read_data
+    level: full         # bulk export of records
+
+  # Writing data
+  records.write:
+    capability: write_data
+    level: limited      # single records, inside the task's scratch area
+  records.bulk_update:
+    capability: write_data
+    level: full
+
+  # Network
+  http.get_allowlisted:
+    capability: network_out
+    level: limited      # hosts on the allow list only
+  http.request_any:
+    capability: network_out
+    level: full
+
+  # Code execution
+  tests.run:
+    capability: code_execution
+    level: limited      # runs in the sandbox, no network or credentials
+  shell.run_networked:
+    capability: code_execution
+    level: full
+
+  # Repository
+  git.push_branch:
+    capability: repo_write
+    level: limited      # the agent's own branch
+  git.open_pr:
+    capability: repo_write
+    level: limited      # proposing is not merging
+  git.merge_feature_branch:
+    capability: repo_write
+    level: full         # merges into shared branches other than main
+
+  # Messages to people
+  email.send_template:
+    capability: external_comms
+    level: limited      # approved templates only
+  email.send_freeform:
+    capability: external_comms
+    level: full
+
+  # Delegation
+  agent.spawn_sandboxed:
+    capability: delegation
+    level: limited
+  agent.spawn_unsupervised:
+    capability: delegation
+    level: full
+
+  # Budget
+  job.run_capped:
+    capability: budget
+    level: limited      # inside the hard cap
+  job.extend_unattended:
+    capability: budget
+    level: full
+
+# Always denied. No evidence, grant or attestation unlocks these.
+red_lines:
+  git.merge_main: merging to main is a red line for agents
+  secrets.read_credentials: reading credentials is a red line for agents

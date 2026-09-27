@@ -1,0 +1,79 @@
+{
+  "_licence": "SPDX-License-Identifier: MIT. Copyright (c) 2026 The remit contributors.",
+  "_generated": "Generated from tools.yaml by 'make rules-json'. Do not edit by hand.",
+  "version": 1,
+  "tools": {
+    "repo.read_file": {
+      "capability": "read_data",
+      "level": "limited"
+    },
+    "records.read_bulk": {
+      "capability": "read_data",
+      "level": "full"
+    },
+    "records.write": {
+      "capability": "write_data",
+      "level": "limited"
+    },
+    "records.bulk_update": {
+      "capability": "write_data",
+      "level": "full"
+    },
+    "http.get_allowlisted": {
+      "capability": "network_out",
+      "level": "limited"
+    },
+    "http.request_any": {
+      "capability": "network_out",
+      "level": "full"
+    },
+    "tests.run": {
+      "capability": "code_execution",
+      "level": "limited"
+    },
+    "shell.run_networked": {
+      "capability": "code_execution",
+      "level": "full"
+    },
+    "git.push_branch": {
+      "capability": "repo_write",
+      "level": "limited"
+    },
+    "git.open_pr": {
+      "capability": "repo_write",
+      "level": "limited"
+    },
+    "git.merge_feature_branch": {
+      "capability": "repo_write",
+      "level": "full"
+    },
+    "email.send_template": {
+      "capability": "external_comms",
+      "level": "limited"
+    },
+    "email.send_freeform": {
+      "capability": "external_comms",
+      "level": "full"
+    },
+    "agent.spawn_sandboxed": {
+      "capability": "delegation",
+      "level": "limited"
+    },
+    "agent.spawn_unsupervised": {
+      "capability": "delegation",
+      "level": "full"
+    },
+    "job.run_capped": {
+      "capability": "budget",
+      "level": "limited"
+    },
+    "job.extend_unattended": {
+      "capability": "budget",
+      "level": "full"
+    }
+  },
+  "red_lines": {
+    "git.merge_main": "merging to main is a red line for agents",
+    "secrets.read_credentials": "reading credentials is a red line for agents"
+  }
+}
