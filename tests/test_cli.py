@@ -161,3 +161,14 @@ def test_demo_runs(tmp_path, monkeypatch, capsys):
     assert "can never satisfy a containment requirement" in out
     assert "has been silent for" in out
     assert "escape found in the shared sandbox image" in out
+
+
+def test_demo_runs_without_pyyaml(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from remit import demo
+
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    monkeypatch.chdir(tmp_path)
+    assert demo.main() == 0
+    assert "Final position" in capsys.readouterr().out

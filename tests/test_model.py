@@ -45,14 +45,25 @@ def test_naive_timestamps_are_utc_and_aware_ones_are_converted():
     assert parse_timestamp("2026-01-01T09:00:00Z") == datetime(2026, 1, 1, 9, tzinfo=timezone.utc)
 
 
-def test_structural_validation():
-    with pytest.raises(ValueError):
-        make_evidence(scope=["teleportation"])
-    ev = make_evidence()
-    with pytest.raises(ValueError):
-        Evidence(**{**ev.__dict__, "evidence_class": "not_a_class"})
-    with pytest.raises(ValueError):
-        Evidence(**{**ev.__dict__, "issued_at": None})
+def test_model_rejects_an_unknown_evidence_class():
+    # Build a valid object first, so the fixture cannot be what fails.
+    valid = make_evidence()
+    fields = {**valid.__dict__, "evidence_class": "not_a_class"}
+    with pytest.raises(ValueError, match="'not_a_class' is not a valid EvidenceClass"):
+        Evidence(**fields)
+
+
+def test_model_rejects_an_unknown_capability_in_scope():
+    valid = make_evidence()
+    fields = {**valid.__dict__, "scope": frozenset({"teleportation"})}
+    with pytest.raises(ValueError, match="'teleportation' is not a valid Capability"):
+        Evidence(**fields)
+
+
+def test_model_requires_issued_at():
+    valid = make_evidence()
+    with pytest.raises(ValueError, match="issued_at is required"):
+        Evidence(**{**valid.__dict__, "issued_at": None})
 
 
 def test_dict_round_trip():

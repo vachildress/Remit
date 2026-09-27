@@ -27,8 +27,10 @@ def full_set(cap, monitor=None):
     if any(r.containment for r in reqs):
         out.append(make_evidence(E.CONTAINMENT_TEST, scope=[cap]))
     for r in reqs:
-        if r.monitor:
-            out.append(make_evidence(E.MONITOR_HEALTH, scope=[cap], strength={"monitor_name": r.monitor}))
+        if r.monitor is not None:
+            # Exactly at the monitor's effectiveness threshold, which must pass.
+            strength = {"monitor_name": r.monitor.name, "effectiveness": r.monitor.min_effectiveness}
+            out.append(make_evidence(E.MONITOR_HEALTH, scope=[cap], strength=strength))
     if any(E.RED_TEAM_REPORT in r.classes for r in reqs):
         out.append(make_evidence(E.RED_TEAM_REPORT, scope=[cap]))
     if any(E.HUMAN_ATTESTATION in r.classes for r in reqs):
@@ -106,7 +108,7 @@ def test_wrong_monitor_does_not_count():
     evidence.append(make_evidence(E.MONITOR_HEALTH, scope=[cap], strength={"monitor_name": "egress-monitor"}))
     ex = explain(evidence, cap)
     assert ex.highest_supported is Level.LIMITED
-    assert "needs 'sandbox-monitor'" in render(ex)
+    assert "no report from monitor 'sandbox-monitor' for test-agent@1.0.0 is scoped to code_execution" in render(ex)
 
 
 def test_expiry_and_revocation_withdraw_support():
@@ -189,3 +191,70 @@ def test_render_names_supporting_evidence():
     for ev in evidence:
         assert ev.id in text
     assert "Highest level the evidence supports: full" in text
+
+
+def monitor_report(cap, name, heartbeat_ago, **strength):
+    hb = (NOW - timedelta(seconds=heartbeat_ago)).isoformat()
+    return make_evidence(
+        E.MONITOR_HEALTH, scope=[cap], strength={"monitor_name": name, "last_heartbeat": hb, **strength}
+    )
+
+
+def without_monitors(cap):
+    return [e for e in full_set(cap) if e.evidence_class is not E.MONITOR_HEALTH]
+
+
+def test_latest_monitor_report_wins_over_an_earlier_healthy_one():
+    cap = C.CODE_EXECUTION
+    healthy_earlier = monitor_report(cap, "sandbox-monitor", 40)
+    degraded_now = monitor_report(cap, "sandbox-monitor", 5, state="degraded")
+    ex = explain(without_monitors(cap) + [healthy_earlier, degraded_now], cap)
+    assert ex.highest_supported is Level.LIMITED
+    text = render(ex)
+    assert f"superseded by the later report {degraded_now.id}" in text
+    assert "reports degraded" in text
+
+
+def test_recovery_is_visible_once_the_latest_report_is_healthy():
+    cap = C.CODE_EXECUTION
+    degraded_earlier = monitor_report(cap, "sandbox-monitor", 40, state="degraded")
+    healthy_now = monitor_report(cap, "sandbox-monitor", 5)
+    ex = explain(without_monitors(cap) + [degraded_earlier, healthy_now], cap)
+    assert ex.highest_supported is Level.FULL
+
+
+def test_revoked_latest_report_is_skipped():
+    cap = C.CODE_EXECUTION
+    healthy = monitor_report(cap, "sandbox-monitor", 30)
+    bogus = monitor_report(cap, "sandbox-monitor", 5, state="down")
+    bogus = type(bogus)(**{**bogus.__dict__, "revoked_at": NOW, "revocation_reason": "misreport"})
+    assert explain(without_monitors(cap) + [healthy, bogus], cap).highest_supported is Level.FULL
+
+
+def test_rules_heartbeat_timeout_is_stricter_than_the_evidence_default():
+    cap = C.CODE_EXECUTION
+    # 90 seconds is inside the 300 second admission default but outside the
+    # 60 second timeout the rules set for the sandbox monitor.
+    report = monitor_report(cap, "sandbox-monitor", 90)
+    ex = explain(without_monitors(cap) + [report], cap)
+    assert ex.highest_supported is Level.LIMITED
+    assert "last heartbeat 90 seconds ago, beyond this monitor's 60 second timeout" in render(ex)
+
+
+def test_monitor_effectiveness_below_its_minimum_does_not_count():
+    cap = C.EXTERNAL_COMMS
+    weak = monitor_report(cap, "outbound-content-monitor", 5, effectiveness=0.94)
+    ex = explain(without_monitors(cap) + [weak], cap)
+    # The monitor is a limited dependency, so the capability falls to none.
+    assert ex.highest_supported is Level.NONE
+    assert "effectiveness is 0.94, needs at least 0.95" in render(ex)
+
+
+def test_render_states_what_healthy_means():
+    text = render(explain(full_set(C.BUDGET), C.BUDGET))
+    assert "healthy means: reports healthy, last heartbeat within 300 seconds, effectiveness at least 0.99" in text
+
+
+def test_eval_alone_does_not_reach_full_read_data():
+    ex = explain([make_evidence(E.EVAL_RESULT, scope=[C.READ_DATA])], C.READ_DATA)
+    assert ex.highest_supported is Level.LIMITED

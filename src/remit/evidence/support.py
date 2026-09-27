@@ -10,11 +10,21 @@ attestation, enforcement) is built on top of it later and is not applied here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from .admission import RISK_LEVELS, assess, metric_kinds, strength_metrics
-from .model import LEVEL_ORDER, Capability, Evidence, EvidenceClass, Level, Subject, format_timestamp, utc
+from .model import (
+    LEVEL_ORDER,
+    Capability,
+    Evidence,
+    EvidenceClass,
+    Level,
+    Subject,
+    format_timestamp,
+    parse_timestamp,
+    utc,
+)
 from .requirements import Requirement, RuleSet
 
 BEHAVIOURAL_CLASSES = (EvidenceClass.EVAL_RESULT, EvidenceClass.RED_TEAM_REPORT)
@@ -96,7 +106,45 @@ def rejection_reasons(
                 f"issued {_days(age)} ago, older than the {_fmt_num(requirement.max_age_days)} day limit"
             )
     reasons.extend(_strength_reasons(evidence, requirement))
+    if requirement.monitor is not None:
+        heartbeat = _heartbeat(evidence)
+        timeout = requirement.monitor.heartbeat_timeout_seconds
+        if heartbeat is not None and (now - heartbeat).total_seconds() > timeout:
+            silent = int((now - heartbeat).total_seconds())
+            reasons.append(
+                f"last heartbeat {silent} seconds ago, beyond this monitor's "
+                f"{_fmt_num(timeout)} second timeout"
+            )
     return reasons
+
+
+def _heartbeat(evidence: Evidence) -> datetime | None:
+    try:
+        return parse_timestamp(str(evidence.strength.get("last_heartbeat")))
+    except ValueError:
+        return None
+
+
+def latest_reports(records: Iterable[Evidence], monitor_name: str) -> tuple[Evidence | None, list[Evidence]]:
+    """The latest unrevoked report from a monitor, and the reports it supersedes.
+
+    Only the latest report counts, so a monitor that reports degraded cannot
+    be propped up by an earlier healthy report that is still inside its
+    heartbeat window. Revoked reports are skipped, since revocation says the
+    report was wrong.
+    """
+    mine = [
+        e
+        for e in records
+        if e.evidence_class is EvidenceClass.MONITOR_HEALTH
+        and e.strength.get("monitor_name") == monitor_name
+        and e.revoked_at is None
+    ]
+    if not mine:
+        return None, []
+    far_past = datetime.min.replace(tzinfo=timezone.utc)
+    mine.sort(key=lambda e: (_heartbeat(e) or far_past, e.issued_at))
+    return mine[-1], mine[:-1]
 
 
 def _strength_reasons(evidence: Evidence, req: Requirement) -> list[str]:
@@ -134,10 +182,11 @@ def _rank(kind: str, value: object) -> float:
 
 
 def remedy(requirement: Requirement, capability: Capability, subject: Subject) -> str:
-    if requirement.monitor:
+    if requirement.monitor is not None:
+        mon = requirement.monitor
         return (
             f"Record monitor_health evidence for {subject} scoped to {capability.value} showing "
-            f"monitor '{requirement.monitor}' healthy, with a heartbeat inside its timeout."
+            f"monitor '{mon.name}' healthy, which here means it {mon.healthy}."
         )
     classes = " or ".join(c.value for c in requirement.classes)
     parts = [f"Add gate eligible {classes} evidence for {subject} scoped to {capability.value}"]
@@ -175,16 +224,30 @@ def explain_capability(
         outcomes = []
         for req, introduced_at in cap_rules.effective(level):
             in_scope = [e for e in pool if capability in e.scope]
-            candidates = [
-                e
-                for e in in_scope
-                if e.evidence_class in req.classes
-                or (req.containment and e.evidence_class in BEHAVIOURAL_CLASSES)
-            ]
-            out_of_scope = tuple(
-                e for e in pool if capability not in e.scope and e.evidence_class in req.classes
-            )
             satisfied, rejected = [], []
+            if req.monitor is not None:
+                latest, superseded = latest_reports(in_scope, req.monitor.name)
+                candidates = [latest] if latest else []
+                rejected.extend(
+                    Rejection(e, (f"superseded by the later report {latest.id}",)) for e in superseded
+                )
+                out_of_scope = tuple(
+                    e
+                    for e in pool
+                    if capability not in e.scope
+                    and e.evidence_class is EvidenceClass.MONITOR_HEALTH
+                    and e.strength.get("monitor_name") == req.monitor.name
+                )
+            else:
+                candidates = [
+                    e
+                    for e in in_scope
+                    if e.evidence_class in req.classes
+                    or (req.containment and e.evidence_class in BEHAVIOURAL_CLASSES)
+                ]
+                out_of_scope = tuple(
+                    e for e in pool if capability not in e.scope and e.evidence_class in req.classes
+                )
             for e in candidates:
                 reasons = rejection_reasons(e, req, capability, now)
                 if reasons:
@@ -224,20 +287,23 @@ def render(explanation: CapabilityExplanation) -> str:
                 continue
             containment = " [containment]" if req.containment else ""
             lines.append(f"    {tag} {req.id}: {req.description}{containment}")
+            if req.monitor is not None:
+                lines.append(f"            healthy means: {req.monitor.healthy}")
             for ev in r.satisfied_by:
                 lines.append(f"            supported by {_describe(ev, e.as_of)}")
             if r.met:
                 continue
             classes = " or ".join(c.value for c in req.classes)
             if not r.rejected:
-                lines.append(f"            no {classes} evidence for {e.subject} is scoped to {e.capability.value}")
+                what = f"report from monitor '{req.monitor.name}'" if req.monitor else f"{classes} evidence"
+                lines.append(f"            no {what} for {e.subject} is scoped to {e.capability.value}")
             for rej in r.rejected:
                 lines.append(f"            {_describe(rej.evidence, e.as_of)} does not count:")
                 for reason in rej.reasons:
                     lines.append(f"              - {reason}")
             if r.out_of_scope:
                 ids = ", ".join(ev.id for ev in r.out_of_scope)
-                lines.append(f"            ({classes} evidence not scoped to {e.capability.value} was ignored: {ids})")
+                lines.append(f"            (evidence not scoped to {e.capability.value} was ignored: {ids})")
             lines.append(f"            To meet it: {r.remedy}")
     lines.append("")
     lines.append(f"  Highest level the evidence supports: {e.highest_supported.value}")

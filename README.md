@@ -10,6 +10,7 @@ Status: weekend 1 of 8. The evidence model, ledger, admission states and the `re
 ```sh
 make demo          # or: uv run demo
 make test          # or: uv run pytest
+make rules-json    # regenerate requirements.json after editing requirements.yaml
 ```
 
 The demo seeds a synthetic ledger for one coding agent and shows three things:
@@ -46,7 +47,13 @@ After the Agile-V Assurance Spine, each piece of evidence reaches one of:
 | admissible | the source is authorised for the class, and the evidence is issued, unexpired and unrevoked |
 | gate_eligible | usable to gate a capability now; monitor_health must also be healthy with a heartbeat inside its timeout |
 
-Only gate eligible evidence counts towards a capability requirement. The draft requirements live in `src/remit/evidence/requirements.json`.
+Only gate eligible evidence counts towards a capability requirement.
+
+## Requirements
+
+The evidence each capability level needs is in `src/remit/evidence/requirements.yaml`, with the reasoning for every threshold, age limit and monitor dependency as comments. `requirements.json` is generated from it with `make rules-json`, so the demo never depends on the YAML parser; a test fails if the two drift apart. The loader enforces the standing rules: containment requirements accept only `containment_test`, every world-acting capability needs containment at limited and full, no capability reaches full on a single evidence class, no requirement is looser than its class age limit, and every level names its monitors explicitly.
+
+The UK financial services mapping is recorded in `docs/uk-mapping.md` (a stub until weekend 7).
 
 ## Licence
 

@@ -99,7 +99,8 @@ def banner(text: str) -> None:
 def main() -> int:
     if DEMO_DB.exists():
         DEMO_DB.unlink()
-    rules = load_rules()
+    # The JSON mirror, so the demo never depends on the YAML parser.
+    rules = load_rules(fmt="json")
     with Ledger(DEMO_DB) as ledger:
         seed(ledger)
         now = CLOCK
